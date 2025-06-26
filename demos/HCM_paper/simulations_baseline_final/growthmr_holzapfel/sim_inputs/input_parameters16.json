@@ -534,50 +534,23 @@
             "total_stress", 
             "total_passive", 
             "myofiber_passive", 
-            "hs_length", 
-            "facetboundaries", 
-            "k_1", 
-            "k_3", 
-            "k_on", 
-            "k_act", 
-            "k_serca", 
-            "local_theta_vis_sheet", 
-            "global_theta_vis_sheet", 
-            "local_theta_vis_fiber", 
-            "global_theta_vis_fiber", 
-            "deviation_sheet", 
-            "stimulus_sheet", 
-            "setpoint_sheet", 
-            "local_theta_vis_sheet_normal", 
-            "global_theta_vis_sheet_normal", 
-            "deviation_sheet_normal", 
-            "stimulus_sheet_normal", 
-            "setpoint_sheet_normal", 
-            "deviation_fiber", 
-            "stimulus_fiber", 
-            "setpoint_fiber",
-            "active_stress_DG0",
-            "fiber_direction",
-            "endo_distance",
-            "cb_number_density_DG0",
-            "cb_number_density",
             "total_stress_vector"
             
         ], 
         "mesh_output_path": [
-            "/mnt/gpfs2_4m/scratch/sba431/HCM_paper/growthmr4/sim_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/growthmr/sim_output/"
         ], 
         "dumping_spatial_in_average": [
-            false
+            true
         ], 
         "output_data_path": [
-            "/mnt/gpfs2_4m/scratch/sba431/HCM_paper/growthmr4/sim_output/data.csv"
+            "/mnt/gpfs2_4m/scratch/ris237/growthmr/sim_output/data.csv"
         ], 
         "frequency_n": [
             20
         ], 
         "growth_mesh_path": [
-            "/mnt/gpfs2_4m/scratch/sba431/HCM_paper/growthmr4/mesh_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/growthmr/mesh_output/"
         ]
     }, 
     "mesh": {

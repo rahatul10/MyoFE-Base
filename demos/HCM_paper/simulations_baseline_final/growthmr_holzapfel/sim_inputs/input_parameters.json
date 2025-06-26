@@ -538,19 +538,19 @@
             
         ], 
         "mesh_output_path": [
-            "/mnt/gpfs2_4m/scratch/sba431/HCM_paper/growthmr8/sim_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/growthmr8/sim_output/"
         ], 
         "dumping_spatial_in_average": [
             true
         ], 
         "output_data_path": [
-            "/mnt/gpfs2_4m/scratch/sba431/HCM_paper/growthmr8/sim_output/data.csv"
+            "/mnt/gpfs2_4m/scratch/ris237/growthmr8/sim_output/data.csv"
         ], 
         "frequency_n": [
             20
         ], 
         "growth_mesh_path": [
-            "/mnt/gpfs2_4m/scratch/sba431/HCM_paper/growthmr8/mesh_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/growthmr8/mesh_output/"
         ]
     }, 
     "mesh": {

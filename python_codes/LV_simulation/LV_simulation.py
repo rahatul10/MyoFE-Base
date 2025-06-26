@@ -42,7 +42,7 @@ class LV_simulation():
     def __init__(self,comm, instruction_data):
 
 
-
+#SARA: IN MY MYOFE-H VERSION THIS PART IS NOT COMMENTED OUT!
         '''self.f0_values = []
         self.fdiff_values = []
         self.lcoord_values = []
@@ -543,9 +543,9 @@ class LV_simulation():
             
             #MM here is version for just Growth and remodling
             
-            data_field = self.spatial_fiber_data_fields+\
+            """data_field = self.spatial_fiber_data_fields+\
                          self.spatial_gr_data_fields+\
-                            self.spatial_extra
+                            self.spatial_extra"""
 
         if in_average:
             spatial_data = pd.DataFrame()

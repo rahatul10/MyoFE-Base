@@ -423,9 +423,9 @@ class Forms(object):
                 p = self.parameters["pressure_variable"]
 
             #Qbulk = b * (I1 - 3)
-            Qbulk = (a / (2.0 * b)) * (exp(b * (I1 - 3)) - 1)
-            Qfiber_sheet = (af / (2.0 * bf)) * (exp(bf * (I4f - 1) ** 2) - 1) + (as_ / (2.0 * bs)) * (exp(bs * (I4s - 1) ** 2) - 1)
-            Qcoupling = (afs / (2.0 * bfs)) * (exp(bfs * I8fs ** 2) - 1)
+            Qbulk = (a / (2.0 * b)) * (exp(b * (I1 - 3.0)) - 1.0)
+            Qfiber_sheet = (af / (2.0 * bf)) * (exp(bf * (I4f - 1.0) ** 2.0) - 1.0) + (as_ / (2.0 * bs)) * (exp(bs * (I4s - 1.0) ** 2.0) - 1.0)
+            Qcoupling = (afs / (2.0 * bfs)) * (exp(bfs * I8fs ** 2.0) - 1.0)
         
                 
             myofiber_stretch = hsl/hsl0
@@ -511,9 +511,9 @@ class Forms(object):
             I4s = inner(s0, Cmat * s0)
             I8fs = inner(f0, Cmat * s0)
 
-            Qbulk = (a / (2.0 * b)) * (exp(b * (I1 - 3)) - 1)
-            Qfiber_sheet = (af / (2.0 * bf)) * (exp(bf * (I4f - 1) ** 2) - 1) + (as_ / (2.0 * bs)) * (exp(bs * (I4s - 1) ** 2) - 1)
-            Qcoupling = (afs / (2.0 * bfs)) * (exp(bfs * I8fs ** 2) - 1)
+            Qbulk = (a / (2.0 * b)) * (exp(b * (I1 - 3.0)) - 1.0)
+            Qfiber_sheet = (af / (2.0 * bf)) * (exp(bf * (I4f - 1.0) ** 2.0) - 1.0) + (as_ / (2.0 * bs)) * (exp(bs * (I4s - 1.0) ** 2.0) - 1.0)
+            Qcoupling = (afs / (2.0 * bfs)) * (exp(bfs * I8fs ** 2.0) - 1.0)
             if(isincomp):
                 p = self.parameters["pressure_variable"]
                 
@@ -919,9 +919,9 @@ class Forms(object):
             S_global = TransMatrix * S_local * TransMatrix.T
             # Holzapfel SEF
             #Qbulk = b * (I1 - 3)
-            Qbulk = (a / (2.0 * b)) * (exp(b * (I1 - 3)) - 1)
-            Qfiber_sheet = (af / (2.0 * bf)) * (exp(bf * (I4f - 1) ** 2) - 1) + (as_ / (2.0 * bs)) * (exp(bs * (I4s - 1) ** 2) - 1)
-            Qcoupling = (afs / (2.0 * bfs)) * (exp(bfs * I8fs ** 2) - 1)
+            Qbulk = (a / (2.0 * b)) * (exp(b * (I1 - 3.0)) - 1.0)
+            Qfiber_sheet = (af / (2.0 * bf)) * (exp(bf * (I4f - 1.0) ** 2.0) - 1.0) + (as_ / (2.0 * bs)) * (exp(bs * (I4s - 1.0) ** 2.0) - 1.0)
+            Qcoupling = (afs / (2.0 * bfs)) * (exp(bfs * I8fs ** 2.0) - 1.0)
             Wp_c = Qbulk + Qfiber_sheet + Qcoupling 
             #Wp_c = (a / (2.0 * b)) * (exp(Qbulk)) + Qfiber_sheet + Qcoupling
             #Wp_c = ((a / (2.0 * b)) * (exp(Qbulk)-1)) + Qfiber_sheet + Qcoupling
@@ -1085,9 +1085,9 @@ class Forms(object):
 
             S_global = TransMatrix * S_local * TransMatrix.T
             # Holzapfel SEF
-            Qbulk = (a / (2.0 * b)) * (exp(b * (I1 - 3)) - 1)
-            Qfiber_sheet = (af / (2.0 * bf)) * (exp(bf * (I4f - 1) ** 2) - 1) + (as_ / (2.0 * bs)) * (exp(bs * (I4s - 1) ** 2) - 1)
-            Qcoupling = (afs / (2.0 * bfs)) * (exp(bfs * I8fs ** 2) - 1)
+            Qbulk = (a / (2.0 * b)) * (exp(b * (I1 - 3.0)) - 1.0)
+            Qfiber_sheet = (af / (2.0 * bf)) * (exp(bf * (I4f - 1.0) ** 2.0) - 1.0) + (as_ / (2.0 * bs)) * (exp(bs * (I4s - 1.0) ** 2.0) - 1.0)
+            Qcoupling = (afs / (2.0 * bfs)) * (exp(bfs * I8fs ** 2.0) - 1.0)
             Wp_c = Qbulk + Qfiber_sheet + Qcoupling 
             #Wp_c = (a / (2.0 * b)) * (exp(Qbulk)) + Qfiber_sheet + Qcoupling 
             #Wp_c = ((a / (2.0 * b)) * (exp(Qbulk)-1)) + Qfiber_sheet + Qcoupling

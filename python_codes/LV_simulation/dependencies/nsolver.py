@@ -437,6 +437,7 @@ class NSolver(object):
             for bc in bcs:
                 bc.apply(B)
 
+
                 rel_res = 1.0
                 res = B.norm("l2")
                 resid0 = res
@@ -463,6 +464,11 @@ class NSolver(object):
                     #solve(A, dww.vector(), b,solver_parameters={"linear_solver": "gmres",
                     #        "preconditioner": "hypre_euclid"})
                     w.vector().axpy(1.0, dww.vector())
+                    w_vec = w.vector().get_local()
+                    if np.isnan(w_vec).any():
+                        print("NaN in solution vector 'w' at iteration %d on rank %d" % (it, self.comm.Get_rank()))
+                        np.save("crash_w_rank%d_it%d.npy" % (self.comm.Get_rank(), it), w_vec)
+
 
 
                     B = assemble(Ftotal,form_compiler_parameters={"representation":"uflacs"})
@@ -480,6 +486,11 @@ class NSolver(object):
 
                     for bc in bcs:
                             bc.apply(B)
+                    local_B = B.get_local()
+                    if np.isnan(local_B).any():
+                        print("NaN detected in residual vector B at iteration %d on rank %d" % (it, self.comm.Get_rank()))
+                        print("Residual norm: %.3e, rel_res: %.3e" % (B.norm("l2"), rel_res))
+
                     #if np.isnan(B.array().astype(float)).any():
                     #    print "nan found in B assembly after bcs"
                     rel_res = B.norm("l2")/resid0
@@ -605,6 +616,12 @@ class NSolver(object):
                         if np.isnan(b.array().astype(float)).any():
                             print 'nan found in b (Ftotal) assembly\n'
                     self.comm.Barrier()
-                if((rel_res > rel_tol and res > abs_tol) or  math.isnan(res)):
+                """if((rel_res > rel_tol and res > abs_tol) or  math.isnan(res)):
                     #self.parameters["FileHandler"][4].close()
+                    raise RuntimeError("Failed Convergence")"""
+                if((rel_res > rel_tol and res > abs_tol) or math.isnan(res)):
+                    if self.comm.Get_rank() == 0:
+                        print("❌ Convergence failed at iteration %d" % it)
+                        print("Final residual: %.3e, relative: %.3e" % (res, rel_res))
+                    np.save("debug_w_rank%d.npy" % self.comm.Get_rank(), w.vector().get_local())
                     raise RuntimeError("Failed Convergence")

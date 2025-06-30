@@ -299,7 +299,7 @@ class NSolver(object):
                     #SARA: Dump state before raising RuntimeError
                 if((rel_res > rel_tol and res > abs_tol) or  math.isnan(res)):
                     if self.comm.Get_rank() == 0:
-                        print("❌ Convergence failed at iteration %d" % it)
+                        print("Convergence failed at iteration %d" % it)
                         print("Final residual: %.3e, relative: %.3e" % (res, rel_res))
                         print("Dumping state...")
 
@@ -620,7 +620,7 @@ class NSolver(object):
                     raise RuntimeError("Failed Convergence")"""
                 if((rel_res > rel_tol and res > abs_tol) or math.isnan(res)):
                     if self.comm.Get_rank() == 0:
-                        print("❌ Convergence failed at iteration %d" % it)
+                        print("Convergence failed at iteration %d" % it)
                         print("Final residual: %.3e, relative: %.3e" % (res, rel_res))
                     np.save("debug_w_rank%d.npy" % self.comm.Get_rank(), w.vector().get_local())
                     raise RuntimeError("Failed Convergence")

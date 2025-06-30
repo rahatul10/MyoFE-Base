@@ -153,7 +153,7 @@ class NSolver(object):
                             
                         F_dict[F_labels[i]] = F_temp.norm("l2")
                     if(self.comm.Get_rank() == 0 and mode > 0):
-                        print("Rank %d — Residual norms at iteration %d" % (self.comm.Get_rank(), it))
+                        print("Rank %d - Residual norms at iteration %d" % (self.comm.Get_rank(), it))
                         print(json.dumps(F_dict, indent=4))
 
                     for bc in bcs:
@@ -304,7 +304,6 @@ class NSolver(object):
                         print("Dumping state...")
 
                     np.save("debug_w_rank%d.npy" % self.comm.Get_rank(), w.vector().get_local())
-                    File("debug_w_rank%d.pvd" % self.comm.Get_rank()) << w
                     raise RuntimeError("Failed Convergence")
 
                """ if((rel_res > rel_tol and res > abs_tol) or  math.isnan(res)):

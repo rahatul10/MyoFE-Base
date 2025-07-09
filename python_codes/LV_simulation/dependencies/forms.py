@@ -7,6 +7,7 @@ Created on Thu Apr 25 15:06:26 2019
 from dolfin import *
 import sys
 import numpy as np
+from ufl import max_value, min_value, sign
 
 class Forms(object):
 
@@ -404,7 +405,73 @@ class Forms(object):
             #Wp = Wp_c
             return Wp
         elif passive_law == "Holzapfel":
-            C2 = self.parameters["c2"][-1]
+        Ea = self.Emat()
+        f0 = self.parameters["fiber"]
+        s0 = self.parameters["sheet"]
+        n0 = self.parameters["sheet-normal"]
+        Kappa = self.parameters["Kappa"]
+        passive_law = self.parameters["passive_law"][0]
+        isincomp = self.parameters["incompressible"]
+        Cmat = self.Cmat()
+        hsl0 = self.parameters["hsl0"]
+
+        # Material parameters
+        C2 = self.parameters["c2"][-1]
+        C3 = self.parameters["c3"][-1]
+        a = self.parameters["a"][-1]
+        b = self.parameters["hb"][-1]
+        af = self.parameters["af"][-1]
+        as_ = self.parameters["as_"][-1]
+        bs = self.parameters["hbs"][-1]
+        bf = self.parameters["hbf"][-1]
+        bfs = self.parameters["hbfs"][-1]
+        afs = self.parameters["afs"][-1]
+
+        # Safety clamp for hsl0
+        hsl0_safe = conditional(hsl0 < 1e-8, 1e-8, hsl0)
+        myofiber_stretch = hsl / hsl0_safe
+
+        # Invariants
+        I1 = dolfin.variable(tr(Cmat))
+        I4f = dolfin.variable(inner(f0, Cmat * f0))
+        I4s = dolfin.variable(inner(s0, Cmat * s0))
+        I8fs = dolfin.variable(inner(f0, Cmat * s0))
+
+        # Clamp invariants to avoid overflow
+        maxval = 100.0
+        I1 = conditional(I1 > maxval, maxval, I1)
+        I4f = conditional(I4f > maxval, maxval, I4f)
+        I4s = conditional(I4s > maxval, maxval, I4s)
+        I8fs = conditional(abs(I8fs) > maxval, maxval * sign(I8fs), I8fs)
+
+        # Exponential terms with overflow protection
+        Qbulk = (a / (2.0 * b)) * (exp(b * (I1 - 3.0)) - 1.0)
+        Qfiber_sheet = (
+            (af / (2.0 * bf)) * (exp(bf * (I4f - 1.0) ** 2.0) - 1.0) +
+            (as_ / (2.0 * bs)) * (exp(bs * (I4s - 1.0) ** 2.0) - 1.0)
+        )
+        Qcoupling = (afs / (2.0 * bfs)) * (exp(bfs * I8fs ** 2.0) - 1.0)
+
+        QQ_m = conditional(myofiber_stretch > 1.0, C3 * (myofiber_stretch - 1.0) ** 2.0, 0.0)
+        Wp_m = C2 * (exp(QQ_m) - 1.0)
+
+        # Incompressibility pressure
+        if isincomp:
+            try:
+                p = self.parameters["pressure_variable"]
+            except KeyError:
+                p = Constant(0.0)
+            Wp_c = Qbulk + Qfiber_sheet + Qcoupling - p * (self.J() - 1.0)
+        else:
+            Wp_c = Qbulk + Qfiber_sheet + Qcoupling + Kappa / 2.0 * (self.J() - 1.0)**2.0
+
+        Wp = Wp_m + Wp_c
+
+        # Debug print
+        dolfin.info(f"Passive SEF Debug | I1: {I1}, I4f: {I4f}, I4s: {I4s}, I8fs: {I8fs}, Wp: {Wp}")
+
+        return Wp
+            """C2 = self.parameters["c2"][-1]
             C3 = self.parameters["c3"][-1]
             a = self.parameters["a"][-1]
             b = self.parameters["hb"][-1]
@@ -438,7 +505,7 @@ class Forms(object):
                 #Wp_c = ((a / (2.0 * b)) * (exp(Qbulk)-1)) + Qfiber_sheet + Qcoupling - p*(self.J() - 1.0)
      
             Wp = Wp_m + Wp_c
-            return Wp
+            return Wp"""
 
     def PassiveMatSEFComps(self,hsl):
         Ea = self.Emat()
@@ -877,7 +944,101 @@ class Forms(object):
 
         elif passive_law == "Holzapfel":
             #print("Using Holzapfel model")
-            C2 = self.parameters["c2"][-1]
+        mesh = self.parameters["mesh"]
+        e1 = Constant((1.0, 0.0, 0.0))
+        e2 = Constant((0.0, 1.0, 0.0))
+        e3 = Constant((0.0, 0.0, 1.0))
+        passive_law = self.parameters["passive_law"][0]
+        isincomp = self.parameters["incompressible"]
+        f0 = self.parameters["fiber"]
+        s0 = self.parameters["sheet"]
+        n0 = self.parameters["sheet-normal"]
+        hsl0 = self.parameters["hsl0"]
+
+        if isincomp:
+            try:
+                p = self.parameters["pressure_variable"]
+            except KeyError:
+                p = Constant(0.0)
+
+        u = self.parameters["displacement_variable"]
+        d = u.ufl_domain().geometric_dimension()
+        I = Identity(d)
+        F = self.Fe()
+        J = self.J()
+        Ea = dolfin.variable(self.Emat())
+        i, j, k, l = indices(4)
+        Ctensor = dolfin.variable(self.Cmat())
+
+        
+            # Parameters
+        C2 = self.parameters["c2"][-1]
+        C3 = self.parameters["c3"][-1]
+        a = self.parameters["a"][-1]
+        b = self.parameters["hb"][-1]
+        af = self.parameters["af"][-1]
+        as_ = self.parameters["as_"][-1]
+        bs = self.parameters["hbs"][-1]
+        bf = self.parameters["hbf"][-1]
+        bfs = self.parameters["hbfs"][-1]
+        afs = self.parameters["afs"][-1]
+
+            # Safety hsl0
+        hsl0_safe = conditional(hsl0 < 1e-8, 1e-8, hsl0)
+        myofiber_stretch = hsl / hsl0_safe
+
+            # Invariants with clamping
+        I1 = dolfin.variable(Ctensor[i, j] * Identity(3)[i, j])
+        I4f = dolfin.variable(f0[i] * Ctensor[i, j] * f0[j])
+        I4s = dolfin.variable(s0[i] * Ctensor[i, j] * s0[j])
+        I8fs = dolfin.variable(f0[i] * Ctensor[i, j] * s0[j])
+
+        maxval = 100.0
+        I1 = conditional(I1 > maxval, maxval, I1)
+        I4f = conditional(I4f > maxval, maxval, I4f)
+        I4s = conditional(I4s > maxval, maxval, I4s)
+        I8fs = conditional(abs(I8fs) > maxval, maxval * sign(I8fs), I8fs)
+
+            # Myofiber stress (passive)
+        Q = C3 * conditional(myofiber_stretch > 1.0, (myofiber_stretch - 1.0)**2.0, 0.0)
+        Sff = (2.0 / myofiber_stretch) * C2 * C3 * (conditional(myofiber_stretch > 1.0, myofiber_stretch, 1.0) - 1.0) * exp(Q)
+
+        S_local = as_tensor([[Sff, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        TransMatrix = as_tensor(f0[i] * e1[j], (i, j)) + \
+                    as_tensor(s0[i] * e2[j], (i, j)) + \
+                    as_tensor(n0[i] * e3[j], (i, j))
+        S_global = TransMatrix * S_local * TransMatrix.T
+
+            # SEF energy components
+        Qbulk = (a / (2.0 * b)) * (exp(b * (I1 - 3.0)) - 1.0)
+        Qfiber_sheet = (
+            (af / (2.0 * bf)) * (exp(bf * (I4f - 1.0)**2.0) - 1.0) +
+            (as_ / (2.0 * bs)) * (exp(bs * (I4s - 1.0)**2.0) - 1.0)
+        )
+        Qcoupling = (afs / (2.0 * bfs)) * (exp(bfs * I8fs**2.0) - 1.0)
+        Wp_c = Qbulk + Qfiber_sheet + Qcoupling
+
+            # Derivatives
+        dWp_dI1 = dolfin.diff(Wp_c, I1)
+        dWp_dI4f = dolfin.diff(Wp_c, I4f)
+        dWp_dI4s = dolfin.diff(Wp_c, I4s)
+        dWp_dI8fs = dolfin.diff(Wp_c, I8fs)
+
+            # PK2 stress tensor
+        PK2_local = as_tensor([
+            [2 * (dWp_dI1 + dWp_dI4f), 2 * dWp_dI8fs, 0.0],
+            [2 * dWp_dI8fs, 2 * (dWp_dI1 + dWp_dI4s), 0.0],
+            [0.0, 0.0, 2 * dWp_dI1]
+        ])
+        PK2_global = as_tensor(TransMatrix[i, k] * TransMatrix[j, l] * PK2_local[k, l], (i, j))
+
+            # Final stress
+        stress_tensor = S_global + PK2_global - p * inv(Ctensor)
+
+            # Debug prints
+        dolfin.info(f"Stress Debug | I1: {I1}, I4f: {I4f}, I4s: {I4s}, I8fs: {I8fs}, Sff: {Sff}")
+        return stress_tensor, Sff, S_global, PK2_global, -p * inv(Ctensor), myofiber_stretch, I1, I4f
+            """C2 = self.parameters["c2"][-1]
             C3 = self.parameters["c3"][-1]
             a = self.parameters["a"][-1]
             b = self.parameters["hb"][-1]
@@ -955,7 +1116,7 @@ class Forms(object):
         else:
             raise ValueError("Unknown passive law: {}".format(passive_law))
         
-        return S_global+PK2_global-p*inv(Ctensor),Sff , S_global, PK2_global, -p*inv(Ctensor),Eff
+        return S_global+PK2_global-p*inv(Ctensor),Sff , S_global, PK2_global, -p*inv(Ctensor),Eff"""
 
     def passivestress(self,hsl):
 

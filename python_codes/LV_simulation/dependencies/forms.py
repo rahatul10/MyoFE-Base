@@ -468,7 +468,12 @@ class Forms(object):
             Wp = Wp_m + Wp_c
 
             # Debug print
-            dolfin.info(f"Passive SEF Debug | I1: {I1}, I4f: {I4f}, I4s: {I4s}, I8fs: {I8fs}, Wp: {Wp}")
+            print("Passive SEF Debug |", 
+                "I1 =", float(assemble(I1 * dx)), 
+                "I4f =", float(assemble(I4f * dx)), 
+                "I4s =", float(assemble(I4s * dx)), 
+                "I8fs =", float(assemble(I8fs * dx)), 
+                "Wp =", float(assemble(Wp * dx)))
 
             return Wp
             """C2 = self.parameters["c2"][-1]
@@ -1036,8 +1041,13 @@ class Forms(object):
             stress_tensor = S_global + PK2_global - p * inv(Ctensor)
 
                 # Debug prints
-            dolfin.info(f"Stress Debug | I1: {I1}, I4f: {I4f}, I4s: {I4s}, I8fs: {I8fs}, Sff: {Sff}")
-            return stress_tensor, Sff, S_global, PK2_global, -p * inv(Ctensor), myofiber_stretch, I1, I4f
+            print("Passive SEF Debug |", 
+                "I1 =", float(assemble(I1 * dx)), 
+                "I4f =", float(assemble(I4f * dx)), 
+                "I4s =", float(assemble(I4s * dx)), 
+                "I8fs =", float(assemble(I8fs * dx)))
+            
+            return stress_tensor, Sff, S_global, PK2_global, -p * inv(Ctensor), myofiber_stretch
             """C2 = self.parameters["c2"][-1]
             C3 = self.parameters["c3"][-1]
             a = self.parameters["a"][-1]

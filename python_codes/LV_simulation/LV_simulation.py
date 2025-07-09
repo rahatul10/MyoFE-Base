@@ -498,7 +498,7 @@ class LV_simulation():
             for f in ['active_stress','total_passive','myofiber_passive',
                       'Sff_mesh','bulk_passive','incomp_stress',
                       'cb_number_density','k_1','hs_length',
-                      'fiber_strain','I1','I4f','Ell','Err','Ecc']:
+                      'fiber_strain','Ell','Err','Ecc']:
                 self.spatial_extra.append(f)
             
             
@@ -672,7 +672,7 @@ class LV_simulation():
                         
                        
 
-                        if m in ['k_1','k_3','k_on','k_act','k_serca','fiber_strain','I1','I4f','Ell','Err','Ecc']:
+                        if m in ['k_1','k_3','k_on','k_act','k_serca','fiber_strain','Ell','Err','Ecc']:
                             temp_obj = project(self.mesh.model['functions'][m], 
                                                 self.mesh.model['function_spaces']["scalar"])
 
@@ -2548,8 +2548,6 @@ class LV_simulation():
             data_mapping2 = {
             
             'fiber_strain' : fiber_strain,
-            'I1' : I1,
-            'I4f' : I4f,
             'Ell': Ell,
             'Err': Err,
             'Ecc': Ecc

@@ -2258,7 +2258,7 @@ class LV_simulation():
                     self.local_spatial_sim_data[f].iloc[self.write_counter] = data_field
 
 
-            '''for f in self.spatial_hs_data_fields:
+            for f in self.spatial_hs_data_fields:
                 data_field = []
                 for h in self.hs_objs_list:
                     data_field.append(h.data[f])
@@ -2287,7 +2287,7 @@ class LV_simulation():
             if self.gr:
                 for f in self.spatial_gr_data_fields:
                     data_field = self.gr.data[f]
-                    self.local_spatial_sim_data[f].iloc[self.write_counter] = data_field'''
+                    self.local_spatial_sim_data[f].iloc[self.write_counter] = data_field
             
 
 
@@ -2295,7 +2295,7 @@ class LV_simulation():
                 data_field = []
                 for h in (self.hs_objs_list):
                     data_field.append(h.myof.data[f])
-                    self.local_spatial_sim_data[f].iloc[self.write_counter] = data_field
+                self.local_spatial_sim_data[f].iloc[self.write_counter] = data_field
 
 
             for f in ['Sff','sff_mean','alpha_f']:

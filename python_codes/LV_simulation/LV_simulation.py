@@ -2295,7 +2295,7 @@ class LV_simulation():
                 data_field = []
                 for h in (self.hs_objs_list):
                     data_field.append(h.myof.data[f])
-                self.local_spatial_sim_data[f].iloc[self.write_counter] = data_field
+                    self.local_spatial_sim_data[f].iloc[self.write_counter] = data_field
 
 
             for f in ['Sff','sff_mean','alpha_f']:

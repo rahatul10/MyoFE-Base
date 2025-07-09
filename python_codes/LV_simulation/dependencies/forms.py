@@ -993,10 +993,17 @@ class Forms(object):
             myofiber_stretch = hsl / hsl0_safe
 
                 # Invariants with clamping
-            I1 = dolfin.variable(Ctensor[i, j] * Identity(3)[i, j])
-            I4f = dolfin.variable(f0[i] * Ctensor[i, j] * f0[j])
-            I4s = dolfin.variable(s0[i] * Ctensor[i, j] * s0[j])
-            I8fs = dolfin.variable(f0[i] * Ctensor[i, j] * s0[j])
+            I1 = Ctensor[i, j] * Identity(3)[i, j]
+            I1 = dolfin.variable(I1)
+
+            I4f = f0[i] * Ctensor[i, j] * f0[j]
+            I4f = dolfin.variable(I4f)
+
+            I4s = s0[i] * Ctensor[i, j] * s0[j]
+            I4s = dolfin.variable(I4s)
+
+            I8fs = f0[i] * Ctensor[i, j] * s0[j]
+            I8fs = dolfin.variable(I8fs)
 
             maxval = 100.0
             I1 = conditional(I1 > maxval, maxval, I1)

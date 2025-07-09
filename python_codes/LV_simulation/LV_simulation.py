@@ -42,19 +42,13 @@ class LV_simulation():
     def __init__(self,comm, instruction_data):
 
 
-#SARA: IN MY MYOFE-H VERSION THIS PART IS NOT COMMENTED OUT!
-        '''self.f0_values = []
+
+        self.f0_values = []
         self.fdiff_values = []
         self.lcoord_values = []
         self.f_proj_value = []
         self.f_proj_CG_value = []
         self.traction_vector_value = []
-        self.active_value = []
-        self.passive_value = []'''
-
-
-
-
 
         # Check for model input first
         if not "model" in  instruction_data:
@@ -504,17 +498,22 @@ class LV_simulation():
             for f in ['active_stress','total_passive','myofiber_passive',
                       'Sff_mesh','bulk_passive','incomp_stress',
                       'cb_number_density','k_1','hs_length',
-                      'fiber_strain','Ell','Err','Ecc']:
+                      'fiber_strain','I1','I4f','Ell','Err','Ecc']:
                 self.spatial_extra.append(f)
             
             
 
-        '''data_field = self.spatial_hs_data_fields +\
+        data_field = self.spatial_hs_data_fields +\
                         self.spatial_myof_data_fields+\
                             self.spatial_memb_data_fields+\
                             self.spatial_fiber_data_fields+\
-                            self.spatial_extra'''
+                            self.spatial_extra
         
+
+
+
+
+
         ### to save resutls space, here we save less results
         '''data_field = self.spatial_fiber_data_fields+\
                             self.spatial_extra'''
@@ -534,18 +533,18 @@ class LV_simulation():
     
                     self.spatial_gr_data_fields.append(k)
 
-            '''data_field = self.spatial_hs_data_fields +\
+            data_field = self.spatial_hs_data_fields +\
                         self.spatial_myof_data_fields+\
                         self.spatial_memb_data_fields+ \
                         self.spatial_fiber_data_fields+ \
                         self.spatial_gr_data_fields+\
-                            self.spatial_extra'''
+                            self.spatial_extra
             
             #MM here is version for just Growth and remodling
             
-            """data_field = self.spatial_fiber_data_fields+\
+            '''data_field = self.spatial_fiber_data_fields+\
                          self.spatial_gr_data_fields+\
-                            self.spatial_extra"""
+                            self.spatial_extra'''
 
         if in_average:
             spatial_data = pd.DataFrame()
@@ -673,7 +672,7 @@ class LV_simulation():
                         
                        
 
-                        if m in ['k_1','k_3','k_on','k_act','k_serca','fiber_strain','Ell','Err','Ecc']:
+                        if m in ['k_1','k_3','k_on','k_act','k_serca','fiber_strain','I1','I4f','Ell','Err','Ecc']:
                             temp_obj = project(self.mesh.model['functions'][m], 
                                                 self.mesh.model['function_spaces']["scalar"])
 
@@ -1149,6 +1148,12 @@ class LV_simulation():
         #self.data['hsl0'] = hsl0
         self.data['hsl'] = new_hs_length_list
         self.data['alpha_f'] = myo_stretch
+        # Project I1 and I4f and store to self.data
+        """self.data['I1'] = project(self.mesh.model['functions']['I1'],
+                                self.mesh.model['function_spaces']["quadrature_space"]).vector().get_local()[:]
+        self.data['I4f'] = project(self.mesh.model['functions']['I4f'],
+                                self.mesh.model['function_spaces']["quadrature_space"]).vector().get_local()[:]"""
+
         """if self.comm.Get_rank() == 0:
             print 'Checking myofiber stretch'
             print 'hsl:'
@@ -1688,31 +1693,76 @@ class LV_simulation():
                 #total_stress = PK2_passive + Pactive
                 #kappa = self.fr.data['time_constant']
 
-
+                
 
                 fdiff = self.fr.stress_law(self.fr.data['signal'],time_step,self.mesh.model['function_spaces']['fiber_FS'])
                 temp_fiber = self.mesh.model['functions']['f0'].vector().get_local()[:]
 
-            
+                
 
                 local_fdiff = fdiff.vector().get_local()[:]
 
                 
+
                 gdim2 = self.mesh.model['mesh'].geometry().dim()
                 self.lcoord = self.mesh.model['function_spaces']['quadrature_space'].\
                 tabulate_dof_coordinates().reshape((-1, gdim2))
                 ### Below not active now. since stress might not be realisic in base, we can exclude some basal points from fiber reoriantaion
                 #print('point n', np.shape(self.lcoord[:,2]))  
                 
+                if self.comm.Get_rank() == 0:
+
+                    print ("chek f0", self.mesh.model['functions']['f0'].vector().get_local()[1:10])
+                    print ("chek fdiff", fdiff.vector().get_local()[1:10])
+                    print ("chek self.lcoord", self.lcoord[:10, 2])
+
+
+                # Containers to store data
+                '''f0_values = []
+                fdiff_values = []
+                lcoord_values = []'''
+
+                if self.t_counter%4 == 0:
+
+                    if self.comm.Get_rank() == 0:
+                        # Collect data in each iteration
+                        self.f0_values.append(self.mesh.model['functions']['f0'].vector().get_local()[1:30])
+                        self.fdiff_values.append(fdiff.vector().get_local()[1:40])
+                        self.lcoord_values.append(self.lcoord[:50, 2] )
+
+                        #self.f_proj_value.append(self.fr.f_proj.vector().get_local()[1:20])
+
+
+                    # Convert lists to DataFrames
+                        df_f0 = pd.DataFrame(self.f0_values)
+                        df_fdiff = pd.DataFrame(self.fdiff_values)
+                        df_lcoord = pd.DataFrame(self.lcoord_values)
+                        #df_f_proj = pd.DataFrame(self.f_proj_value)
+#
+
+                        
+                        mesh_output_path ="/mnt/gpfs2_4m/scratch/mme250/gr_paper/no_perturb_MR/t_growth_40/sim_output/"
+
+
+                        # Save each parameter to a separate CSV file
+                        df_f0.to_csv(mesh_output_path + "f0_output.csv", index=False, header=False)
+                        df_fdiff.to_csv(mesh_output_path + "fdiff_output.csv", index=False, header=False)
+                        df_lcoord.to_csv(mesh_output_path + "lcoord_output.csv", index=False, header=False)
+                        #df_f_proj.to_csv(mesh_output_path + "f_proj_output.csv", index=False, header=False)
+
+
                 
-                cnt =0 
+                """cnt =0 
                 cnt2 =0 
                 l1 = -0.02
-                l2 = -0.1
+                l2 = -0.1"""
 
-                
+                cnt =0 
+                cnt2 =0 
+                l1 = 0
+                l2 = -0.05
 
-                for i in np.arange(self.local_n_of_int_points):
+                '''for i in np.arange(self.local_n_of_int_points):
                     if self.lcoord[i][2]< l2:  # normal FR
                         # wrong way: temp_fiber[i] += local_fdiff[i]
                         temp_fiber[i*3:i*3+3]+= local_fdiff[i*3:i*3+3]
@@ -1722,14 +1772,14 @@ class LV_simulation():
                         # wrong way: temp_fiber[i] += local_fdiff[i]
 
                         coef = (l1-self.lcoord[i][2])/(l1-l2)
-                        temp_fiber[i*3:i*3+3]+= local_fdiff[i*3:i*3+3] * coef * coef 
-                        cnt2 = cnt2 +1
+                        temp_fiber[i*3:i*3+3]+= local_fdiff[i*3:i*3+3] * coef 
+                        cnt2 = cnt2 +1'''
                 #print ("cnt",cnt)  
                 #print ("cnt2",cnt2)  
 
 
                 ### all point FR
-                #temp_fiber += fdiff.vector().get_local()[:]
+                temp_fiber += fdiff.vector().get_local()[:]
                 self.mesh.model['functions']['f0'].vector()[:] = temp_fiber 
 
                 s1 , n1 ,f1= self.fr.update_local_coordinate_system(self.mesh.model['functions']['f0'])
@@ -1920,7 +1970,7 @@ class LV_simulation():
                                                 self.mesh.model['function_spaces']["scalar"])
                         
 
-                    if m in ['k_1','k_3','k_on','k_act','k_serca','cb_number_density','fiber_strain','Ell','Err','Ecc']:
+                    if m in ['k_1','k_3','k_on','k_act','k_serca','cb_number_density','fiber_strain','I1','I4f','Ell','Err','Ecc']:
                             temp_obj = project(self.mesh.model['functions'][m], 
                                                 self.mesh.model['function_spaces']["scalar"])
                             
@@ -2475,6 +2525,10 @@ class LV_simulation():
 
             fiber_strain = project(self.mesh.model['functions']['fiber_strain'],
                               self.mesh.model['function_spaces']["quadrature_space"]).vector().get_local()[:]
+            I1 = project(self.mesh.model['functions']['I1'],
+                                self.mesh.model['function_spaces']["quadrature_space"]).vector().get_local()[:]
+            I4f = project(self.mesh.model['functions']['I4f'],
+                                self.mesh.model['function_spaces']["quadrature_space"]).vector().get_local()[:]
             
             Ell = project(self.mesh.model['functions']['Ell'],
                               self.mesh.model['function_spaces']["quadrature_space"]).vector().get_local()[:]
@@ -2499,6 +2553,8 @@ class LV_simulation():
             data_mapping2 = {
             
             'fiber_strain' : fiber_strain,
+            'I1' : I1,
+            'I4f' : I4f,
             'Ell': Ell,
             'Err': Err,
             'Ecc': Ecc

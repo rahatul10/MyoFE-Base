@@ -658,6 +658,10 @@ class Forms(object):
             Wp_c = Qbulk + Qfiber_sheet + Qcoupling
 
                 # Derivatives
+            I1 = dolfin.variable(I1)
+            I4f = dolfin.variable(I4f)
+            I4s = dolfin.variable(I4s)
+            I8fs = dolfin.variable(I8fs)
             dWp_dI1 = dolfin.diff(Wp_c, I1)
             dWp_dI4f = dolfin.diff(Wp_c, I4f)
             dWp_dI4s = dolfin.diff(Wp_c, I4s)

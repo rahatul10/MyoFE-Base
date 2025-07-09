@@ -1970,7 +1970,7 @@ class LV_simulation():
                                                 self.mesh.model['function_spaces']["scalar"])
                         
 
-                    if m in ['k_1','k_3','k_on','k_act','k_serca','cb_number_density','fiber_strain','I1','I4f','Ell','Err','Ecc']:
+                    if m in ['k_1','k_3','k_on','k_act','k_serca','cb_number_density','fiber_strain','Ell','Err','Ecc']:
                             temp_obj = project(self.mesh.model['functions'][m], 
                                                 self.mesh.model['function_spaces']["scalar"])
                             
@@ -2525,11 +2525,6 @@ class LV_simulation():
 
             fiber_strain = project(self.mesh.model['functions']['fiber_strain'],
                               self.mesh.model['function_spaces']["quadrature_space"]).vector().get_local()[:]
-            I1 = project(self.mesh.model['functions']['I1'],
-                                self.mesh.model['function_spaces']["quadrature_space"]).vector().get_local()[:]
-            I4f = project(self.mesh.model['functions']['I4f'],
-                                self.mesh.model['function_spaces']["quadrature_space"]).vector().get_local()[:]
-            
             Ell = project(self.mesh.model['functions']['Ell'],
                               self.mesh.model['function_spaces']["quadrature_space"]).vector().get_local()[:]
             Err = project(self.mesh.model['functions']['Err'],

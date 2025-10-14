@@ -530,7 +530,7 @@
         "output_data_path": [
             "/mnt/gpfs2_4m/scratch/ris237/base/sim_output/data.csv"
         ],
-        "mesh_output_path": [g
+        "mesh_output_path": [
             "/mnt/gpfs2_4m/scratch/ris237/base/sim_output/"
         ],
         "mesh_object_to_save": [

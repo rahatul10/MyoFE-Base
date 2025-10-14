@@ -7,13 +7,13 @@
             "perturbations": [
                 {
                     "variable": [
-                        "aorta_resistance"
+                        "mitral_insufficiency_conductance"
                     ], 
                     "t_stop_s": [
                         60
                     ], 
                     "total_change": [
-                        170
+                        0.005
                     ], 
                     "t_start_s": [
                         50
@@ -55,7 +55,7 @@
             "activations": [
                 {
                     "t_start_s": [
-                        20
+                        200000
                     ],
                     "t_stop_s": [
                         200000
@@ -101,7 +101,7 @@
                     0.001
                 ], 
                 "k_1": [
-                    4.4
+                    4.92
                 ], 
                 "ext_passive_exp_L": [
                     70
@@ -217,33 +217,10 @@
                         1.1
                     ], 
                     "signal": [
-                        "total_stress"
+                        "myofiber_passive_stress"
                     ], 
                     "type": [
-                        "sheet"
-                    ], 
-                    "local_theta_min": [
-                        0.9
-                    ], 
-                    "theta_max": [
-                        1.5
-                    ]
-                }, 
-                {
-                    "theta_min": [
-                        0.5
-                    ], 
-                    "tau": [
-                        8
-                    ], 
-                    "local_theta_max": [
-                        1.1
-                    ], 
-                    "signal": [
-                        "total_stress"
-                    ], 
-                    "type": [
-                        "sheet_normal"
+                        "fiber"
                     ], 
                     "local_theta_min": [
                         0.9
@@ -340,7 +317,7 @@
                         2.0
                     ], 
                     "compliance": [
-                        0.05
+                        0.07
                     ], 
                     "name": [
                         "veins"
@@ -534,7 +511,7 @@
                 "new_stress_kroon"
             ],
             "time_constant": [
-                8
+                4
             ]
         }
     }, 
@@ -551,60 +528,22 @@
     }, 
     "output_handler": {
         "mesh_object_to_save": [
-            "displacement", 
-            "active_stress", 
-            "total_stress", 
-            "total_passive", 
-            "myofiber_passive", 
-            "hs_length", 
-            "facetboundaries", 
-            "k_1", 
-            "k_3", 
-            "k_on", 
-            "k_act", 
-            "k_serca", 
-            "local_theta_vis_sheet", 
-            "global_theta_vis_sheet", 
-            "local_theta_vis_fiber", 
-            "global_theta_vis_fiber", 
-            "deviation_sheet", 
-            "stimulus_sheet", 
-            "setpoint_sheet", 
-            "local_theta_vis_sheet_normal", 
-            "global_theta_vis_sheet_normal", 
-            "deviation_sheet_normal", 
-            "stimulus_sheet_normal", 
-            "setpoint_sheet_normal", 
-            "deviation_fiber", 
-            "stimulus_fiber", 
-            "setpoint_fiber",
-            "active_stress_DG0",
-            "reorienting_angle",
-            "c_param",
-            "c_param_DG0",
-            "fiber_direction",
-            "endo_distance",
-            "cb_number_density_DG0",
-            "cb_number_density",
-            "k_1",
-            "k_1_DG0",
-            "total_stress_vector",
-            "Transverse_Angle",
-            "Helical_Angle"
+            
         ], 
         "mesh_output_path": [
-            "/mnt/gpfs2_4m/scratch/mme250/AS_paper/AS_kappa8/sim_output/"        ], 
+            "/mnt/gpfs2_4m/scratch/mme250/gr_paper/final_models/MR_growth_baro/sim_output/"
+        ], 
         "dumping_spatial_in_average": [
-            false
+            true
         ], 
         "output_data_path": [
-            "/mnt/gpfs2_4m/scratch/mme250/AS_paper/AS_kappa8/sim_output/data.csv"
+            "/mnt/gpfs2_4m/scratch/mme250/gr_paper/final_models/MR_growth_baro/sim_output/data.csv"
         ], 
         "frequency_n": [
-            20
+            1
         ], 
         "growth_mesh_path": [
-            "/mnt/gpfs2_4m/scratch/mme250/AS_paper/AS_kappa8/mesh_output/"
+            "/mnt/gpfs2_4m/scratch/mme250/gr_paper/final_models/MR_growth_baro/mesh_output/"
         ]
     }, 
     "mesh": {
@@ -777,7 +716,7 @@
                     0
                 ]
             }
-        ],
+        ], 
         "apex_contractility": {
             "components": [
                 {

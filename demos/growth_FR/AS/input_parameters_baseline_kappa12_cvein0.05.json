@@ -3,39 +3,7 @@
         "time_step": [
             0.001
         ], 
-        "perturbation": {
-            "perturbations": [
-                {
-                    "variable": [
-                        "aorta_resistance"
-                    ], 
-                    "t_stop_s": [
-                        60
-                    ], 
-                    "total_change": [
-                        170
-                    ], 
-                    "t_start_s": [
-                        50
-                    ], 
-                    "level": [
-                        "circulation"
-                    ]
-                }
-            ]
-        }, 
-        "growth": {
-            "activations": [
-                {
-                    "t_stop_s": [
-                        400
-                    ], 
-                    "t_start_s": [
-                        40
-                    ]
-                }
-            ]
-        }, 
+        
         "no_of_time_steps": [
             200000
         ], 
@@ -101,7 +69,7 @@
                     0.001
                 ], 
                 "k_1": [
-                    4.4
+                    4.92
                 ], 
                 "ext_passive_exp_L": [
                     70
@@ -204,59 +172,7 @@
                 ]
             }
         }, 
-        "growth": {
-            "components": [
-                {
-                    "theta_min": [
-                        0.5
-                    ], 
-                    "tau": [
-                        8
-                    ], 
-                    "local_theta_max": [
-                        1.1
-                    ], 
-                    "signal": [
-                        "total_stress"
-                    ], 
-                    "type": [
-                        "sheet"
-                    ], 
-                    "local_theta_min": [
-                        0.9
-                    ], 
-                    "theta_max": [
-                        1.5
-                    ]
-                }, 
-                {
-                    "theta_min": [
-                        0.5
-                    ], 
-                    "tau": [
-                        8
-                    ], 
-                    "local_theta_max": [
-                        1.1
-                    ], 
-                    "signal": [
-                        "total_stress"
-                    ], 
-                    "type": [
-                        "sheet_normal"
-                    ], 
-                    "local_theta_min": [
-                        0.9
-                    ], 
-                    "theta_max": [
-                        1.5
-                    ]
-                }
-            ], 
-            "growth_frequency_n": [
-                4
-            ]
-        }, 
+        
         "circulation": {
             "blood_volume": [
                 4.5
@@ -340,7 +256,7 @@
                         2.0
                     ], 
                     "compliance": [
-                        0.05
+                        0.07
                     ], 
                     "name": [
                         "veins"
@@ -534,7 +450,7 @@
                 "new_stress_kroon"
             ],
             "time_constant": [
-                8
+                12
             ]
         }
     }, 
@@ -593,18 +509,18 @@
             "Helical_Angle"
         ], 
         "mesh_output_path": [
-            "/mnt/gpfs2_4m/scratch/mme250/AS_paper/AS_kappa8/sim_output/"        ], 
+            "/mnt/gpfs2_4m/scratch/mme250/AS_paper/baseline_c005_kappa12/sim_output/"        ], 
         "dumping_spatial_in_average": [
             false
         ], 
         "output_data_path": [
-            "/mnt/gpfs2_4m/scratch/mme250/AS_paper/AS_kappa8/sim_output/data.csv"
+            "/mnt/gpfs2_4m/scratch/mme250/AS_paper/baseline_c005_kappa12/sim_output/data.csv"
         ], 
         "frequency_n": [
             20
         ], 
         "growth_mesh_path": [
-            "/mnt/gpfs2_4m/scratch/mme250/AS_paper/AS_kappa8/mesh_output/"
+            "/mnt/gpfs2_4m/scratch/mme250/AS_paper/baseline_c005_kappa12/mesh_output/"
         ]
     }, 
     "mesh": {

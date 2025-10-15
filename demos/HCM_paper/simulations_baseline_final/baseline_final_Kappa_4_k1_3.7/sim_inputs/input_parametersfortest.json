@@ -411,7 +411,7 @@
                     0.6
                 ],
                 "k_1": [
-                    3.7
+                    4.0
                 ],
                 "k_force": [
                     0.001
@@ -528,10 +528,10 @@
     },
     "output_handler": {
         "output_data_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/base/sim_output/data.csv"
+            "/mnt/gpfs2_4m/scratch/ris237/base1/sim_output/data.csv"
         ],
         "mesh_output_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/base/sim_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/base1/sim_output/"
         ],
         "mesh_object_to_save": [
             "displacement",

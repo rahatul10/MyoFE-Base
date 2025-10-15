@@ -7,7 +7,6 @@ Created on Mon Jan 10 11:15:59 2022
 from pyclbr import Function
 import numpy as np
 import json
-from mpi4py import MPI
 from dolfin import *
 import os
 from ..dependencies.forms import Forms
@@ -29,7 +28,7 @@ class MeshClass():
 
         self.model = dict()
         self.data = dict()
-        
+
         if not predefined_mesh:
             mesh_str = os.path.join(os.getcwd(),mesh_struct['mesh_path'][0])
         
@@ -53,6 +52,7 @@ class MeshClass():
         self.no_of_cells = len(subdomains.array())
         #print "no of cells"
         #print self.no_of_cells
+
         
 
         self.model['function_spaces'] = self.initialize_function_spaces(mesh_struct)
@@ -392,6 +392,9 @@ class MeshClass():
 
         functions["passive_total_stress"] =passive_total_stress
 
+        Pactive = Function(self.model['function_spaces']['quadrature_space'])
+        functions["Pactive"] = Pactive
+
         functions["Ell"] =Ell
         functions["Ecc"] =Ecc
         functions["Err"] =Err
@@ -612,14 +615,9 @@ class MeshClass():
                 project(self.model['functions']['hsl'],
                     self.model['function_spaces']['quadrature_space']).vector().get_local()[:]
         
-        """self.model['functions']["passive_total_stress"], self.model['functions']["Sff"] ,self.model['functions']["myo_passive_PK2"],\
+        self.model['functions']["passive_total_stress"], self.model['functions']["Sff"] ,self.model['functions']["myo_passive_PK2"],\
         self.model['functions']["bulk_passive"],self.model['functions']["incomp_stress"],self.model['functions']["fiber_strain"] = \
-            uflforms.stress(self.model['functions']["hsl"])"""
-        self.model['functions']["passive_total_stress"], self.model['functions']["Sff"], self.model['functions']["myo_passive_PK2"],\
-        self.model['functions']["bulk_passive"], self.model['functions']["incomp_stress"], self.model['functions']["fiber_strain"],\
-        self.model['functions']["I1"], self.model['functions']["I4f"] = \
             uflforms.stress(self.model['functions']["hsl"])
-
         
         temp_DG = project(self.model['functions']["Sff"], FunctionSpace(mesh, "DG", 1), form_compiler_parameters={"representation":"uflacs"})
         p_f = interpolate(temp_DG, self.model['function_spaces']['quadrature_space'])
@@ -627,7 +625,9 @@ class MeshClass():
          
         self.model['functions']['PK2_local'],self.model['functions']['incomp'] = \
             uflforms.passivestress(self.model['functions']["hsl"])
-        self.model['functions']['total_stress'] = Pactive + self.model['functions']["passive_total_stress"]
+        #self.model['functions']['total_stress'] = Pactive + self.model['functions']["passive_total_stress"]
+
+        self.model['functions']['total_stress'] = self.model['functions']['Pactive'] + self.model['functions']["passive_total_stress"]
 
         #self.model['functions']['myofiber_stretch'] = self.model['functions']["hsl"]/self.model['functions']["hsl0"]
         self.model['functions']['alpha_f'] = alpha_f

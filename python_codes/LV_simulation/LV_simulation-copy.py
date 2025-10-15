@@ -498,7 +498,7 @@ class LV_simulation():
             for f in ['active_stress','total_passive','myofiber_passive',
                       'Sff_mesh','bulk_passive','incomp_stress',
                       'cb_number_density','k_1','hs_length',
-                      'fiber_strain','I1','I4f','Ell','Err','Ecc']:
+                      'fiber_strain','Ell','Err','Ecc']:
                 self.spatial_extra.append(f)
             
             
@@ -515,8 +515,8 @@ class LV_simulation():
 
 
         ### to save resutls space, here we save less results
-        '''data_field = self.spatial_fiber_data_fields+\
-                            self.spatial_extra'''
+        data_field = self.spatial_fiber_data_fields+\
+                            self.spatial_extra
                             
 
         if (self.gr != [] ):
@@ -672,7 +672,7 @@ class LV_simulation():
                         
                        
 
-                        if m in ['k_1','k_3','k_on','k_act','k_serca','fiber_strain','I1','I4f','Ell','Err','Ecc']:
+                        if m in ['k_1','k_3','k_on','k_act','k_serca','fiber_strain','Ell','Err','Ecc']:
                             temp_obj = project(self.mesh.model['functions'][m], 
                                                 self.mesh.model['function_spaces']["scalar"])
 
@@ -1669,11 +1669,26 @@ class LV_simulation():
         if (self.fr):
             self.data['fr_active'] = 0
             for f in self.prot.fiber_re_activations:
+
                 if ((self.t_counter >= f.data['t_start_ind']) and
                         (self.t_counter < f.data['t_stop_ind'])):
                     self.data['fr_active'] = 1
                     if self.comm.Get_rank() == 0:
                         print("fiber reorientation active")
+
+
+                '''if ((self.t_counter >= f.data['t_start_ind1']) and
+                        (self.t_counter < f.data['t_stop_ind1'])):
+                    self.data['fr_active'] = 1
+                    if self.comm.Get_rank() == 0:
+                        print("fiber reorientation active1")
+
+
+                if ((self.t_counter >= f.data['t_start_ind2']) and
+                        (self.t_counter < f.data['t_stop_ind2'])):
+                    self.data['fr_active'] = 1
+                    if self.comm.Get_rank() == 0:
+                        print("fiber reorientation active2")'''
 
 
 
@@ -1693,12 +1708,23 @@ class LV_simulation():
                 #total_stress = PK2_passive + Pactive
                 #kappa = self.fr.data['time_constant']
 
+<<<<<<< HEAD
                 
 
+=======
+
+          
+>>>>>>> cffd7f9d6d0cac4034246e54515f351573357317
                 fdiff = self.fr.stress_law(self.fr.data['signal'],time_step,self.mesh.model['function_spaces']['fiber_FS'])
+                
                 temp_fiber = self.mesh.model['functions']['f0'].vector().get_local()[:]
+<<<<<<< HEAD
 
                 
+=======
+                
+            
+>>>>>>> cffd7f9d6d0cac4034246e54515f351573357317
 
                 local_fdiff = fdiff.vector().get_local()[:]
 
@@ -1757,12 +1783,18 @@ class LV_simulation():
                 l1 = -0.02
                 l2 = -0.1"""
 
+<<<<<<< HEAD
                 cnt =0 
                 cnt2 =0 
                 l1 = 0
                 l2 = -0.05
 
                 '''for i in np.arange(self.local_n_of_int_points):
+=======
+                
+                
+                for i in np.arange(self.local_n_of_int_points):
+>>>>>>> cffd7f9d6d0cac4034246e54515f351573357317
                     if self.lcoord[i][2]< l2:  # normal FR
                         # wrong way: temp_fiber[i] += local_fdiff[i]
                         temp_fiber[i*3:i*3+3]+= local_fdiff[i*3:i*3+3]
@@ -1776,11 +1808,14 @@ class LV_simulation():
                         cnt2 = cnt2 +1'''
                 #print ("cnt",cnt)  
                 #print ("cnt2",cnt2)  
-
+                        
+                
 
                 ### all point FR
                 temp_fiber += fdiff.vector().get_local()[:]
                 self.mesh.model['functions']['f0'].vector()[:] = temp_fiber 
+
+                
 
                 s1 , n1 ,f1= self.fr.update_local_coordinate_system(self.mesh.model['functions']['f0'])
                 
@@ -1970,7 +2005,7 @@ class LV_simulation():
                                                 self.mesh.model['function_spaces']["scalar"])
                         
 
-                    if m in ['k_1','k_3','k_on','k_act','k_serca','cb_number_density','fiber_strain','I1','I4f','Ell','Err','Ecc']:
+                    if m in ['k_1','k_3','k_on','k_act','k_serca','cb_number_density','fiber_strain','Ell','Err','Ecc']:
                             temp_obj = project(self.mesh.model['functions'][m], 
                                                 self.mesh.model['function_spaces']["scalar"])
                             
@@ -2361,7 +2396,7 @@ class LV_simulation():
 
 
             ###since displacement is difiened in CG function space. here to get data in gauss poinst we project it to a qud vector space 
-
+            
             d_temp0 = project(self.mesh.model['functions']['w'].sub(0),self.mesh.model['function_spaces']['fiber_FS'])
             d_temp = d_temp0.vector().get_local()[:]
 
@@ -2525,11 +2560,6 @@ class LV_simulation():
 
             fiber_strain = project(self.mesh.model['functions']['fiber_strain'],
                               self.mesh.model['function_spaces']["quadrature_space"]).vector().get_local()[:]
-            I1 = project(self.mesh.model['functions']['I1'],
-                                self.mesh.model['function_spaces']["quadrature_space"]).vector().get_local()[:]
-            I4f = project(self.mesh.model['functions']['I4f'],
-                                self.mesh.model['function_spaces']["quadrature_space"]).vector().get_local()[:]
-            
             Ell = project(self.mesh.model['functions']['Ell'],
                               self.mesh.model['function_spaces']["quadrature_space"]).vector().get_local()[:]
             Err = project(self.mesh.model['functions']['Err'],
@@ -2553,8 +2583,6 @@ class LV_simulation():
             data_mapping2 = {
             
             'fiber_strain' : fiber_strain,
-            'I1' : I1,
-            'I4f' : I4f,
             'Ell': Ell,
             'Err': Err,
             'Ecc': Ecc

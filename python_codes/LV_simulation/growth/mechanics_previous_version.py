@@ -274,7 +274,7 @@ class GrowthMechanicsClass():
         functions["hsl_old"] = hsl_old
         functions["y_vec"] = y_vec
         #functions['core_ranks'] = core_ranks
-
+        
         return functions
 
     def initialize_boundary_conditions(self):
@@ -433,12 +433,8 @@ class GrowthMechanicsClass():
         '''self.model['functions']["total_passive_PK2"], self.model['functions']["Sff"] = \
             uflforms.stress(self.model['functions']["hsl"])'''
         
-        """self.model['functions']["passive_total_stress"], self.model['functions']["Sff"] ,self.model['functions']["myo_passive_PK2"],\
+        self.model['functions']["passive_total_stress"], self.model['functions']["Sff"] ,self.model['functions']["myo_passive_PK2"],\
         self.model['functions']["bulk_passive"],self.model['functions']["incomp_stress"],self.model['functions']["fiber_strain"] = \
-            uflforms.stress(self.model['functions']["hsl"])"""
-        self.model['functions']["passive_total_stress"], self.model['functions']["Sff"], self.model['functions']["myo_passive_PK2"],\
-        self.model['functions']["bulk_passive"], self.model['functions']["incomp_stress"], self.model['functions']["fiber_strain"],\
-        self.model['functions']["I1"], self.model['functions']["I4f"] = \
             uflforms.stress(self.model['functions']["hsl"])
         
 

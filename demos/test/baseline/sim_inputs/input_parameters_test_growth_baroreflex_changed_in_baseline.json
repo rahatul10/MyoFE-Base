@@ -10,13 +10,13 @@
                         "aorta_resistance"
                     ], 
                     "t_stop_s": [
-                        60
+                        35
                     ], 
                     "total_change": [
                         170
                     ], 
                     "t_start_s": [
-                        50
+                        25
                     ], 
                     "level": [
                         "circulation"
@@ -31,7 +31,7 @@
                         400
                     ], 
                     "t_start_s": [
-                        40
+                        15
                     ]
                 }
             ]
@@ -46,7 +46,7 @@
                         250
                     ], 
                     "t_start_s": [
-                        50
+                        5
                     ]
                 }
             ]
@@ -101,7 +101,7 @@
                     0.001
                 ], 
                 "k_1": [
-                    8.0
+                    7.0
                 ], 
                 "ext_passive_exp_L": [
                     70

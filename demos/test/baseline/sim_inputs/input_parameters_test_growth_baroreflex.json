@@ -10,13 +10,13 @@
                         "aorta_resistance"
                     ], 
                     "t_stop_s": [
-                        60
+                        40
                     ], 
                     "total_change": [
                         170
                     ], 
                     "t_start_s": [
-                        50
+                        30
                     ], 
                     "level": [
                         "circulation"
@@ -28,22 +28,22 @@
             "activations": [
                 {
                     "t_stop_s": [
-                        400
+                        150
                     ], 
                     "t_start_s": [
-                        15
+                        20
                     ]
                 }
             ]
         }, 
         "no_of_time_steps": [
-            15000
+            150000
         ], 
         "baroreflex": {
             "activations": [
                 {
                     "t_stop_s": [
-                        250
+                        150
                     ], 
                     "t_start_s": [
                         5

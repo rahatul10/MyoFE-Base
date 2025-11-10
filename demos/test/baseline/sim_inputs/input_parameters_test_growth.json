@@ -561,16 +561,19 @@
             
         ], 
         "mesh_output_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/base/sim_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/base_growth/sim_output/"
         ], 
         "dumping_spatial_in_average": [
             false
         ], 
         "output_data_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/base/sim_output/data.csv"
+            "/mnt/gpfs2_4m/scratch/ris237/base_growth/sim_output/data.csv"
         ], 
         "frequency_n": [
-            10
+            20
+        ],
+        "growth_mesh_path": [
+            "/mnt/gpfs2_4m/scratch/base_growth/mesh_output/"
         ]
     }, 
     "mesh": {

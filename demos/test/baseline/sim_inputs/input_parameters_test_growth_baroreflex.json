@@ -573,7 +573,7 @@
             20
         ],
         "growth_mesh_path": [
-            "/mnt/gpfs2_4m/scratch/growthwithb/mesh_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/growthwithb/mesh_output/"
         ] 
     }, 
     "mesh": {

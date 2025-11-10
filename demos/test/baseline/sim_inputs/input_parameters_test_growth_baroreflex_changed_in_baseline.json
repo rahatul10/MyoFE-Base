@@ -101,7 +101,7 @@
                     0.001
                 ], 
                 "k_1": [
-                    7.0
+                    8.0
                 ], 
                 "ext_passive_exp_L": [
                     70
@@ -197,7 +197,7 @@
                     0.0006
                 ], 
                 "k_serca": [
-                    12.3
+                    10.3
                 ], 
                 "Ca_content": [
                     0.001
@@ -573,7 +573,7 @@
             20
         ],
         "growth_mesh_path": [
-            "/mnt/gpfs2_4m/scratch/growthwithb1/mesh_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/growthwithb1/mesh_output/"
         ]
     }, 
     "mesh": {

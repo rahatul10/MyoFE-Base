@@ -186,7 +186,7 @@
                     0.01
                 ], 
                 "k_act": [
-                    0.130
+                    0.170
                 ], 
                 "implementation": {
                     "kinetic_scheme": [

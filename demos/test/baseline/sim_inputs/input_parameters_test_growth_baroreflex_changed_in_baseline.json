@@ -561,19 +561,19 @@
             
         ], 
         "mesh_output_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/growthwithb1/sim_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/growth_with_baro_changed/sim_output/"
         ], 
         "dumping_spatial_in_average": [
             false
         ], 
         "output_data_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/growthwithb1/sim_output/data.csv"
+            "/mnt/gpfs2_4m/scratch/ris237/growth_with_baro_changed/sim_output/data.csv"
         ], 
         "frequency_n": [
             20
         ],
         "growth_mesh_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/growthwithb1/mesh_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/growth_with_baro_changed/mesh_output/"
         ]
     }, 
     "mesh": {

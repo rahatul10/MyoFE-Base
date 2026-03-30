@@ -10,13 +10,13 @@
                         "aorta_resistance"
                     ], 
                     "t_stop_s": [
-                        60
+                        300
                     ], 
                     "total_change": [
                         170
                     ], 
                     "t_start_s": [
-                        50
+                        200
                     ], 
                     "level": [
                         "circulation"

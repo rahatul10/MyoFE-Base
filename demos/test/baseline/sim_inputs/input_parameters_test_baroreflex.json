@@ -37,16 +37,16 @@
             ]
         }, 
         "no_of_time_steps": [
-            40000
+            60000
         ], 
         "baroreflex": {
             "activations": [
                 {
                     "t_stop_s": [
-                        40
+                        60
                     ], 
                     "t_start_s": [
-                        15
+                        5
                     ]
                 }
             ]

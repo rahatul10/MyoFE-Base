@@ -31,7 +31,7 @@
                         400
                     ], 
                     "t_start_s": [
-                        40
+                        100
                     ]
                 }
             ]
@@ -43,10 +43,10 @@
             "activations": [
                 {
                     "t_stop_s": [
-                        40
+                        60
                     ], 
                     "t_start_s": [
-                        15
+                        5
                     ]
                 }
             ]
@@ -55,7 +55,7 @@
             "activations": [
                 {
                     "t_start_s": [
-                        40
+                        20
                     ],
                     "t_stop_s": [
                         60

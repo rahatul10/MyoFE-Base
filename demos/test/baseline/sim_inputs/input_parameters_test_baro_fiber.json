@@ -580,13 +580,13 @@
                     false
                 ], 
                 "rel_tol": [
-                    1e08
+                    1e8
                 ], 
                 "max_iter": [
                     300
                 ], 
                 "abs_tol": [
-                    1e08
+                    1e8
                 ]
             }
         }, 

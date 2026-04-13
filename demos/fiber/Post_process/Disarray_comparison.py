@@ -35,7 +35,7 @@ from mpl_toolkits.mplot3d import Axes3D
 
 #--------------------------------------------------------------------------------
 # Load inputs:
-base_dir = 'C:/Users/mme250/OneDrive - University of Kentucky/Github/FEniCS-Myosim/demos/fiber/Het_test3_cluster/'
+base_dir = 'C:/Users/ris237/OneDrive - University of Kentucky/Github/FEniCS-Myosim/demos/fiber/Het_test3_cluster/'
 sim_dir = 'sim_output/mesh_output/'
 
 Num_model = 1

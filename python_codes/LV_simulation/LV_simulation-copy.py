@@ -1767,7 +1767,7 @@ class LV_simulation():
 #
 
                         
-                        mesh_output_path ="/mnt/gpfs2_4m/scratch/mme250/gr_paper/no_perturb_MR/t_growth_40/sim_output/"
+                        mesh_output_path ="/mnt/gpfs2_4m/scratch/ris237/gr_paper/no_perturb_MR/t_growth_40/sim_output/"
 
 
                         # Save each parameter to a separate CSV file

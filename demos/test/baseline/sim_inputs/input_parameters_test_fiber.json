@@ -10,13 +10,13 @@
                         "aorta_resistance"
                     ], 
                     "t_stop_s": [
-                        40
+                        300
                     ], 
                     "total_change": [
                         170
                     ], 
                     "t_start_s": [
-                        30
+                        200
                     ], 
                     "level": [
                         "circulation"
@@ -28,25 +28,25 @@
             "activations": [
                 {
                     "t_stop_s": [
-                        150
+                        400
                     ], 
                     "t_start_s": [
-                        20
+                        100
                     ]
                 }
             ]
         }, 
         "no_of_time_steps": [
-            150000
+            60000
         ], 
         "baroreflex": {
             "activations": [
                 {
                     "t_stop_s": [
-                        150
+                        600
                     ], 
                     "t_start_s": [
-                        5
+                        500
                     ]
                 }
             ]
@@ -55,10 +55,10 @@
             "activations": [
                 {
                     "t_start_s": [
-                        300000
+                        20
                     ],
                     "t_stop_s": [
-                        400000
+                        60
                     ]
                 }
             ]
@@ -317,7 +317,7 @@
                         2.0
                     ], 
                     "compliance": [
-                        0.078
+                        0.1
                     ], 
                     "name": [
                         "veins"
@@ -561,19 +561,16 @@
             
         ], 
         "mesh_output_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/growth_with_baro_changed/sim_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/base_fiber/sim_output/"
         ], 
         "dumping_spatial_in_average": [
             false
         ], 
         "output_data_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/growth_with_baro_changed/sim_output/data.csv"
+            "/mnt/gpfs2_4m/scratch/ris237/base_fiber/sim_output/data.csv"
         ], 
         "frequency_n": [
-            20
-        ],
-        "growth_mesh_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/growth_with_baro_changed/mesh_output/"
+            10
         ]
     }, 
     "mesh": {

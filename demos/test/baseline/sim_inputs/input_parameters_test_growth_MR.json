@@ -7,43 +7,43 @@
             "perturbations": [
                 {
                     "variable": [
-                        "aorta_resistance"
+                        "mitral_insufficiency_conductance"
                     ], 
                     "t_stop_s": [
-                        3000
+                        40
                     ], 
                     "total_change": [
-                        170
+                        0.005
                     ], 
                     "t_start_s": [
-                        2000
+                        30
                     ], 
                     "level": [
                         "circulation"
                     ]
                 }
             ]
-        }, 
+        },
         "growth": {
             "activations": [
                 {
                     "t_stop_s": [
-                        4000
+                        60
                     ], 
                     "t_start_s": [
-                        1000
+                        20
                     ]
                 }
             ]
         }, 
         "no_of_time_steps": [
-            40000
+            60000
         ], 
         "baroreflex": {
             "activations": [
                 {
                     "t_stop_s": [
-                        600
+                        1500
                     ], 
                     "t_start_s": [
                         500
@@ -55,10 +55,10 @@
             "activations": [
                 {
                     "t_start_s": [
-                        20
+                        300000
                     ],
                     "t_stop_s": [
-                        200
+                        400000
                     ]
                 }
             ]
@@ -197,14 +197,14 @@
                     0.0006
                 ], 
                 "k_serca": [
-                    10.3
+                    12.3
                 ], 
                 "Ca_content": [
                     0.001
                 ]
             }
         }, 
-        "growth": {
+       "growth": {
             "components": [
                 {
                     "theta_min": [
@@ -217,10 +217,10 @@
                         1.1
                     ], 
                     "signal": [
-                        "total_stress"
+                        "myofiber_passive_stress"
                     ], 
                     "type": [
-                        "sheet"
+                        "fiber"
                     ], 
                     "local_theta_min": [
                         0.9
@@ -229,7 +229,7 @@
                         1.5
                     ]
                 }
-            ], 
+            ],
             "growth_frequency_n": [
                 4
             ]
@@ -317,7 +317,7 @@
                         2.0
                     ], 
                     "compliance": [
-                        0.1
+                        0.078
                     ], 
                     "name": [
                         "veins"
@@ -561,16 +561,19 @@
             
         ], 
         "mesh_output_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/base_fiber/sim_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/base_growth_MR/sim_output/"
         ], 
         "dumping_spatial_in_average": [
             false
         ], 
         "output_data_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/base_fiber/sim_output/data.csv"
+            "/mnt/gpfs2_4m/scratch/ris237/base_growth_MR/sim_output/data.csv"
         ], 
         "frequency_n": [
             20
+        ],
+        "growth_mesh_path": [
+            "/mnt/gpfs2_4m/scratch/ris237/base_growth_MR/mesh_output/"
         ]
     }, 
     "mesh": {

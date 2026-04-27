@@ -28,7 +28,7 @@
             "activations": [
                 {
                     "t_stop_s": [
-                        150
+                        60
                     ], 
                     "t_start_s": [
                         20
@@ -37,7 +37,7 @@
             ]
         }, 
         "no_of_time_steps": [
-            150000
+            60000
         ], 
         "baroreflex": {
             "activations": [
@@ -586,7 +586,7 @@
                     1e-08
                 ], 
                 "max_iter": [
-                    300
+                    100
                 ], 
                 "abs_tol": [
                     1e-08

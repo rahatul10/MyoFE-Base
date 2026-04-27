@@ -37,7 +37,7 @@
             ]
         }, 
         "no_of_time_steps": [
-            20000
+            40000
         ], 
         "baroreflex": {
             "activations": [
@@ -564,26 +564,26 @@
             "/mnt/gpfs2_4m/scratch/ris237/base_fiber/sim_output/"
         ], 
         "dumping_spatial_in_average": [
-            true
+            false
         ], 
         "output_data_path": [
             "/mnt/gpfs2_4m/scratch/ris237/base_fiber/sim_output/data.csv"
         ], 
         "frequency_n": [
-            10
+            20
         ]
     }, 
     "mesh": {
         "solver": {
             "params": {
                 "debugging_mode": [
-                    true
+                    false
                 ], 
                 "rel_tol": [
                     1e-08
                 ], 
                 "max_iter": [
-                    300
+                    100
                 ], 
                 "abs_tol": [
                     1e-08

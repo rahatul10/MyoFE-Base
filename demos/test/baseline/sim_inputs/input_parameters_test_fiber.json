@@ -564,7 +564,7 @@
             "/mnt/gpfs2_4m/scratch/ris237/base_fiber/sim_output/"
         ], 
         "dumping_spatial_in_average": [
-            false
+            true
         ], 
         "output_data_path": [
             "/mnt/gpfs2_4m/scratch/ris237/base_fiber/sim_output/data.csv"
@@ -577,7 +577,7 @@
         "solver": {
             "params": {
                 "debugging_mode": [
-                    false
+                    true
                 ], 
                 "rel_tol": [
                     1e-08

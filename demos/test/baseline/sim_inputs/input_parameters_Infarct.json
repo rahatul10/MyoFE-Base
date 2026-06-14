@@ -91,7 +91,7 @@
         "forms_parameters": 
         {
             "passive_law_parameters": {
-              "passive_law": ["Guccione"],
+              "passive_law": ["semi_structural"],
               "c": [200, {"heterogeneous":"True","law":"chronic_infarct","scaling_factor":15}],
               "c2": [250],
               "c3": [15.0],

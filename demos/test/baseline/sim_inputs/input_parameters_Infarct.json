@@ -253,8 +253,8 @@
     },
     "output_handler":
     {
-        "output_data_path": ["/mnt/gpfs2_4m/scratch/ris237/base_baroreflex/sim_output/data.csv"],
-        "mesh_output_path": ["/mnt/gpfs2_4m/scratch/ris237/base_baroreflex/sim_output"],
+        "output_data_path": ["/mnt/gpfs2_4m/scratch/ris237/Infarct/sim_output/data.csv"],
+        "mesh_output_path": ["/mnt/gpfs2_4m/scratch/ris237/Infarct/sim_output"],
         "mesh_object_to_save":
         [
             "displacement",

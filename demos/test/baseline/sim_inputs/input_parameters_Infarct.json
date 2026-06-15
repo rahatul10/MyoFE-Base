@@ -253,8 +253,8 @@
     },
     "output_handler":
     {
-        "output_data_path": ["/project/jfwe223_uksr/Mohammad_data/HCM_paper/infarct_0.25_kappa15_old_mesh/data.csv"],
-        "mesh_output_path": ["/project/jfwe223_uksr/Mohammad_data/HCM_paper/infarct_0.25_kappa15_old_mesh/mesh_output"],
+        "output_data_path": ["/mnt/gpfs2_4m/scratch/ris237/base_baroreflex/sim_output/data.csv"],
+        "mesh_output_path": ["/mnt/gpfs2_4m/scratch/ris237/base_baroreflex/sim_output"],
         "mesh_object_to_save":
         [
             "displacement",

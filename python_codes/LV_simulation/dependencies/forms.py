@@ -223,7 +223,7 @@ class Forms(object):
         hsl0 = self.parameters["hsl0"]
         
 
-        if passive_law == "Guccione":
+        if passive_law == "Guccione" or passive_law == "semi_structural":
 
             C = self.parameters["c"][-1]
             C2 = self.parameters["c2"][-1]

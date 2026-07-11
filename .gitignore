@@ -14,3 +14,4 @@ Gemfile.lock
 vtk/
 Doxygen_documentation/
 preliminary_growth/output*
+.DS_Store

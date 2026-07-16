@@ -74,6 +74,47 @@ RCA = [3, 4, 9, 10, 15]
 LCX = [5, 6, 11, 12, 16]
 
 
+# ---------------------------------------------------------------------------
+# PERFUSION REGIONS (coronary sub-territories)
+# ---------------------------------------------------------------------------
+# Fixed mapping of AHA segments to named coronary perfusion regions, following
+# the published branch-level territory table (LAD1/3/4, MARG1/2/3, LCX3, PDA).
+# This is anatomy, not a tunable parameter -- it lives in code, not JSON.
+#
+# Every AHA segment 1..17 belongs to exactly one region.  The assertion below
+# enforces that: edit the table and break the partition, and import fails loudly.
+PERFUSION_REGIONS = {
+    "LAD1":  [1, 2, 8],
+    "LAD4":  [7],
+    "LAD3":  [13, 14, 17],
+    "MARG1": [6, 12],
+    "MARG2": [5, 11],
+    "MARG3": [15, 16],
+    "LCX3":  [4, 10],
+    "PDA":   [3, 9],
+}
+
+# Region name -> integer ID, assigned by SORTED name so the IDs are
+# deterministic and reproducible (Python 2.7 dict order is not).  Do not read
+# these numbers from memory -- use region_legend() to recover name from ID.
+REGION_NAME_TO_ID = {
+    name: i + 1 for i, name in enumerate(sorted(PERFUSION_REGIONS))
+}
+
+# Flat lookup: AHA segment id -> region id.  Built once at import.
+_SEGMENT_TO_REGION_ID = {}
+for _name, _segs in PERFUSION_REGIONS.items():
+    for _s in _segs:
+        _SEGMENT_TO_REGION_ID[_s] = REGION_NAME_TO_ID[_name]
+
+# Build-time partition check: exactly segments 1..17, none missing or doubled.
+_assigned = sorted(_SEGMENT_TO_REGION_ID.keys())
+if _assigned != list(range(1, 18)):
+    raise RuntimeError(
+        "PERFUSION_REGIONS is not a clean partition of AHA segments 1..17. "
+        "Got %s." % _assigned)
+
+
 def build_frame(params):
     """Return the apex, anatomical basis vectors, and axis length."""
 
@@ -245,3 +286,25 @@ def territory(segment):
     result[np.in1d(segment, LCX).reshape(segment.shape)] = 3
 
     return result
+
+
+def region_of(segment):
+    """Map AHA segment ids to perfusion-region ids (1..N, by sorted name).
+
+    segment : array of AHA ids in 1..17.  Returns int array of the same shape.
+    Use region_legend() to recover the region name from an id.
+    """
+    segment = np.asarray(segment)
+    result = np.zeros(segment.shape, dtype=int)
+    for s, rid in _SEGMENT_TO_REGION_ID.items():
+        result[segment == s] = rid
+    return result
+
+
+def region_legend():
+    """Return {region_id: region_name} for interpreting the region field.
+
+    Print this alongside the region field so the integer labels in ParaView can
+    be read back as LAD1, MARG2, PDA, etc.
+    """
+    return {rid: name for name, rid in REGION_NAME_TO_ID.items()}

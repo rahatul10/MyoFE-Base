@@ -518,7 +518,7 @@
             "subtree": ["lad3"],
             "imp_peak": [{"LAD1": 70.0, "LAD3": 43.0, "LAD4": 90.0}]
         }
-        }
+        
     }, 
     "heart_rate": {
         "t_active_period": [

@@ -1,0 +1,113 @@
+"""
+Perfusion module: drives the 0D coronary tree from the running simulation.
+
+Stage 2 -- one-way coupling only.
+
+    P_AO  <- taken from the systemic circulation each timestep (real)
+    P_IMP <- prescribed analytic waveform (placeholder for Eq. 17)
+
+Nothing computed here feeds back into the mechanics, so this cannot
+destabilise a simulation.  Eq. 17 (real IMP) and Eqs. 19-20 (eta) come later.
+
+UNITS
+-----
+MyoFE's circulation works in mmHg (see circulation.py, the 0.0075 factor
+converting LV cavity pressure from Pa).  The coronary tree follows the paper
+and works in kPa.  Every exchange across this boundary is converted here and
+nowhere else.
+
+Python 2.7 compatible.
+"""
+
+import numpy as np
+
+from .coronary_rc import CoronaryRC, SUBTREES, MMHG_PER_KPA
+
+
+class perfusion(object):
+
+    def __init__(self, perfusion_struct, parent, initial_pressure_arteries):
+
+        self.parent = parent
+        self.data = {}
+        self.model = {}
+
+        for k in perfusion_struct.keys():
+            self.model[k] = perfusion_struct[k][0]
+
+        subtree = self.model.get('subtree', 'lad3')
+        if subtree not in SUBTREES:
+            raise ValueError("unknown coronary subtree '%s'; options are %s"
+                             % (subtree, sorted(SUBTREES.keys())))
+
+        self.time_step = parent.prot.data['time_step']
+
+        self.tree = CoronaryRC(
+            SUBTREES[subtree],
+            self.time_step,
+            compliance_placement=self.model.get('compliance_placement',
+                                                'distal'),
+            terminal_resistance=self.model.get('terminal_resistance', None))
+
+        # prescribed IMP placeholder, peak values in mmHg per territory
+        self.imp_peak_mmHg = self.model.get('imp_peak', {})
+        for s in self.tree.terminals:
+            if s not in self.imp_peak_mmHg:
+                self.imp_peak_mmHg[s] = 70.0
+
+        self.systole_fraction = self.model.get('systole_fraction', 0.4375)
+
+        # initial state: steady solution at the starting aortic pressure
+        P_AO_kPa = initial_pressure_arteries / MMHG_PER_KPA
+        self.P = self.tree.steady_state(P_AO_kPa,
+                                        self.return_prescribed_imp(0.0))
+
+        self.data['coronary_P_AO'] = initial_pressure_arteries
+        for s in self.tree.terminals:
+            self.data['coronary_flow_' + s] = 0.0
+            self.data['coronary_imp_' + s] = 0.0
+
+    def return_cycle_length(self):
+        hr = self.parent.data['heart_rate']
+        if hr <= 0.0:
+            raise ValueError("heart rate must be positive to phase the "
+                             "prescribed IMP waveform")
+        return 60.0 / hr
+
+    def return_prescribed_imp(self, t):
+        """Placeholder for Eq. 17.  Half-sine over systole, zero in diastole.
+        Returns kPa keyed by terminal segment."""
+        T = self.return_cycle_length()
+        T_sys = self.systole_fraction * T
+        phase = t - T * np.floor(t / T)
+        if phase < T_sys:
+            shape = np.sin(np.pi * phase / T_sys)
+        else:
+            shape = 0.0
+        return dict((s, self.imp_peak_mmHg[s] * shape / MMHG_PER_KPA)
+                    for s in self.tree.terminals)
+
+    def implement_time_step(self, pressure_arteries, time_step, t):
+        """Advance the coronary tree one step.
+
+        pressure_arteries is mmHg, straight from self.circ.data.
+        """
+        if abs(time_step - self.time_step) > 1e-12:
+            raise ValueError(
+                "coronary matrix was factorized for dt=%g but the simulation "
+                "is stepping at dt=%g; rebuild the tree if dt changes"
+                % (self.time_step, time_step))
+
+        P_AO_kPa = pressure_arteries / MMHG_PER_KPA
+        P_IMP_kPa = self.return_prescribed_imp(t)
+
+        self.P = self.tree.step(self.P, P_AO_kPa, P_IMP_kPa)
+
+        q = self.tree.perfusion(self.P, P_AO_kPa, P_IMP_kPa)
+
+        self.data['coronary_P_AO'] = pressure_arteries
+        for s in self.tree.terminals:
+            self.data['coronary_flow_' + s] = q[s]
+            self.data['coronary_imp_' + s] = P_IMP_kPa[s] * MMHG_PER_KPA
+
+        return q

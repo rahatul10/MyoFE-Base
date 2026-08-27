@@ -497,19 +497,19 @@
         "mesh_object_to_save": [
            ], 
         "mesh_output_path": [
-            "/mnt/gpfs2_4m/scratch/mme250/gr_paper/final_models/baseline/sim_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/gr_paper/final_models/baseline/sim_output/"
         ], 
         "dumping_spatial_in_average": [
             true
         ], 
         "output_data_path": [
-            "/mnt/gpfs2_4m/scratch/mme250/gr_paper/final_models/baseline/sim_output/data.csv"
+            "/mnt/gpfs2_4m/scratch/ris237/gr_paper/final_models/baseline/sim_output/data.csv"
         ], 
         "frequency_n": [
             1
         ], 
         "growth_mesh_path": [
-            "/mnt/gpfs2_4m/scratch/mme250/gr_paper/final_models/baseline/mesh_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/gr_paper/final_models/baseline/mesh_output/"
         ]
     }, 
     "mesh": {

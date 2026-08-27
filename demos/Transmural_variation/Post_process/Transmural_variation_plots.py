@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 
-base_dir= 'C:/Users/mme250/OneDrive - University of Kentucky/Transmural_modeling/models/'
+base_dir= 'C:/Users/ris237/OneDrive - University of Kentucky/Transmural_modeling/models/'
 sim_dir =   'baseline_10cycle_main/'
 
 '''endo_dist = pd.read_csv(base_dir + sim_dir + 'endo_dist_data.csv')

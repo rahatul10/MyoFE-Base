@@ -40,11 +40,15 @@ class perfusion(object):
             raise ValueError("unknown coronary subtree '%s'; options are %s"
                              % (subtree, sorted(SUBTREES.keys())))
 
-        self.time_step = parent.prot.data['time_step']
-
+        # The protocol (and therefore the timestep) does not exist yet when
+        # LV_simulation.__init__ runs -- self.prot is created later, inside
+        # run_simulation().  The tree is therefore built lazily on the first
+        # call to implement_time_step, when dt is known.
+        self.subtree = subtree
+        self.time_step = None
         self.tree = CoronaryRC(
             SUBTREES[subtree],
-            self.time_step,
+            1.0,
             compliance_placement=self.model.get('compliance_placement',
                                                 'distal'),
             terminal_resistance=self.model.get('terminal_resistance', None))
@@ -57,15 +61,28 @@ class perfusion(object):
 
         self.systole_fraction = self.model.get('systole_fraction', 0.4375)
 
-        # initial state: steady solution at the starting aortic pressure
-        P_AO_kPa = initial_pressure_arteries / MMHG_PER_KPA
-        self.P = self.tree.steady_state(P_AO_kPa,
-                                        self.return_prescribed_imp(0.0))
+        self.P = None
+        self.initial_pressure_arteries = initial_pressure_arteries
 
         self.data['coronary_P_AO'] = initial_pressure_arteries
         for s in self.tree.terminals:
             self.data['coronary_flow_' + s] = 0.0
             self.data['coronary_imp_' + s] = 0.0
+
+    def build(self, time_step):
+        """Factorize the coronary matrix for this timestep and set the
+        initial state.  Called on the first timestep, not at construction,
+        because the protocol does not exist until run_simulation()."""
+        self.time_step = time_step
+        self.tree = CoronaryRC(
+            SUBTREES[self.subtree],
+            time_step,
+            compliance_placement=self.model.get('compliance_placement',
+                                                'distal'),
+            terminal_resistance=self.model.get('terminal_resistance', None))
+        P_AO_kPa = self.initial_pressure_arteries / MMHG_PER_KPA
+        self.P = self.tree.steady_state(P_AO_kPa,
+                                        self.return_prescribed_imp(0.0))
 
     def return_cycle_length(self):
         hr = self.parent.data['heart_rate']
@@ -92,7 +109,9 @@ class perfusion(object):
 
         pressure_arteries is mmHg, straight from self.circ.data.
         """
-        if abs(time_step - self.time_step) > 1e-12:
+        if self.time_step is None:
+            self.build(time_step)
+        elif abs(time_step - self.time_step) > 1e-12:
             raise ValueError(
                 "coronary matrix was factorized for dt=%g but the simulation "
                 "is stepping at dt=%g; rebuild the tree if dt changes"

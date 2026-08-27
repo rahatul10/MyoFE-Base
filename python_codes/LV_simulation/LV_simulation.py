@@ -344,7 +344,6 @@ class LV_simulation():
         self.t_counter = 0
         self.end_diastolic = 0
 
-
         """ If requried, create the baroreceptor"""
         self.data['baroreflex_active'] = 0
         self.data['baroreflex_setpoint'] = 0
@@ -354,6 +353,14 @@ class LV_simulation():
                                     self.circ.data['pressure_arteries'])
         else:
             self.br = []
+
+        """ If required, create the coronary perfusion model """
+        if ('perfusion' in instruction_data['model']):
+            self.perf = perf.perfusion(instruction_data['model']['perfusion'],
+                                       self,
+                                       self.circ.data['pressure_arteries'])
+        else:
+            self.perf = []
         # If required, create the growth object
         if 'growth' in instruction_data['model']:
             if self.comm.Get_rank() == 0:
@@ -951,6 +958,11 @@ class LV_simulation():
                 self.mesh.model['functions'][p].vector()[:] = \
                   self.mesh.data[p]
 
+        # Advance the coronary tree with the current aortic pressure
+        if (self.perf):
+            self.perf.implement_time_step(self.circ.data['pressure_arteries'],
+                                          time_step,
+                                          self.data['time'])
 
         self.data['myocardium_vol'] = \
             assemble(1.0*dx(domain = self.mesh.model['mesh']), 

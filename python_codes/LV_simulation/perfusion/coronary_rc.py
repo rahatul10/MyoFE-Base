@@ -53,7 +53,7 @@ try:
 except ImportError:
     _HAVE_SCIPY = False
 
-from coronary_segments import SEGMENTS, INLET_NODE
+from .coronary_segments import SEGMENTS, INLET_NODE
 
 
 MMHG_PER_KPA = 7.50062

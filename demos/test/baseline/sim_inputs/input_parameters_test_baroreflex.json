@@ -37,7 +37,7 @@
             ]
         }, 
         "no_of_time_steps": [
-            60000
+            20000
         ], 
         "baroreflex": {
             "activations": [
@@ -513,6 +513,11 @@
             "time_constant": [
                 4
             ]
+        },
+        "perfusion": {
+            "subtree": ["lad3"],
+            "imp_peak": [{"LAD1": 70.0, "LAD3": 43.0, "LAD4": 90.0}]
+        }
         }
     }, 
     "heart_rate": {
@@ -561,13 +566,13 @@
             
         ], 
         "mesh_output_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/base_baroreflex/sim_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/perfusion_test/sim_output/"
         ], 
         "dumping_spatial_in_average": [
             false
         ], 
         "output_data_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/base_baroreflex/sim_output/data.csv"
+            "/mnt/gpfs2_4m/scratch/ris237/perfusion_test/sim_output/data.csv"
         ], 
         "frequency_n": [
             10

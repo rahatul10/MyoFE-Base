@@ -448,6 +448,9 @@ class LV_simulation():
         # Add in fields from optional modules
         if (self.br != []):
             data_fields = data_fields + list(self.br.data.keys())
+
+        if (self.perf != []):
+            data_fields = data_fields + list(self.perf.data.keys())
         
         if self.gr: 
             for f in list(self.gr.data.keys()):
@@ -2231,6 +2234,11 @@ class LV_simulation():
         if (self.br):
             for f in list(self.br.data.keys()):
                 self.sim_data[f][self.write_counter] = self.br.data[f]
+
+        if (self.perf):
+            for f in list(self.perf.data.keys()):
+                self.sim_data[f][self.write_counter] = self.perf.data[f]
+
         if (self.gr):
             for f in list(self.gr.data.keys()):
                 # Add this safety check to prevent KeyError

@@ -53,13 +53,19 @@ try:
 except ImportError:
     _HAVE_SCIPY = False
 
-from .coronary_segments import SEGMENTS, INLET_NODE
+from coronary_segments import SEGMENTS, INLET_NODE
 
 
 MMHG_PER_KPA = 7.50062
 
 
 SUBTREES = {
+    # Two main trunks straight off the aorta.  Neither has children, so both
+    # are terminals and there are no interior nodes: the system has ZERO
+    # unknowns and reduces to two independent Ohm's law calculations.  The
+    # two paths share only the aortic root, which is pinned, so they cannot
+    # steal flow from one another.
+    "lmca_rca": ["LMCA", "RCA"],
     "single": ["LMCA"],
     "series": ["LMCA", "LAD"],
     "branch": ["LMCA", "LAD", "LAD1", "LAD2"],
@@ -75,6 +81,15 @@ PERFUSION_REGIONS_LAD = {
     "LAD1": [1, 2, 8],
     "LAD3": [13, 14, 17],
     "LAD4": [7],
+}
+
+# Two-territory split for the "lmca_rca" subtree, following the conventional
+# AHA coronary distribution: the left main supplies the LAD and LCX
+# territories, the right coronary supplies the inferior wall.  Together these
+# are an exact partition of all 17 segments.
+PERFUSION_REGIONS_LMCA_RCA = {
+    "LMCA": [1, 2, 5, 6, 7, 8, 11, 12, 13, 14, 16, 17],
+    "RCA":  [3, 4, 9, 10, 15],
 }
 
 

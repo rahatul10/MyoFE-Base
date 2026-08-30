@@ -1,48 +1,38 @@
 """
-0D epicardial coronary network, R-C form, no terminal impedance.
+0D coronary model: two trunks off the aortic root.
 
-Structure mirrors MyoFE's circulation model (circulation.py): pressures are
-the states, flows are algebraic across resistances.  Inductance is dropped.
-The terminal impedance Z of Table 1 is NOT used -- see note below.
+    AO --[ R_LMCA ]--> LMCA territory
+    AO --[ R_RCA  ]--> RCA  territory
 
-States live at NODES:
+Both trunks start at the aortic root, where pressure is prescribed from the
+systemic circulation (Eq. 23), and end in myocardium, where pressure is
+prescribed from the intramyocardial pressure (Eq. 24).  Both ends of both
+segments are therefore boundary conditions: the system has ZERO unknowns and
+each trunk is an independent Ohm's law calculation,
 
-    AO                pinned to P_AO          (Eq. 23)
-    terminal nodes    pinned to P_IMP^s       (Eq. 24)
-    interior nodes    free, one state each
+    Q_s = (P_AO - P_IMP_s) / R_s
 
-    C_n dP_n/dt = sum(inflows) - sum(outflows)
-    Q_s = (P_{node_p} - P_{node_d}) / R_s
+The two paths meet only at the aortic root, which is pinned, so neither can
+draw flow from the other.  Inter-territory steal is structurally impossible
+in this configuration.
 
-Backward Euler gives A P^{n+1} = b with A constant -> factorize once.
-Unknowns = number of interior nodes (7 for the full tree).
+NOTE ON COMPLIANCE
+------------------
+C is carried in the table and assembled, but with both ends of every segment
+pinned there are no free nodes for it to act on, so it has no dynamic effect
+here.  The circuit is purely resistive until the tree is extended and
+interior junctions appear.  The machinery is kept so that adding branches
+later needs no rewrite.
 
-ON Z
-----
-Eq. (24) sets the outlet pressure equal to the averaged intramyocardial
-pressure directly; Z does not appear in it.  Section 2.1 states only that Z
-is determined primarily by the downstream microcirculation, represented with
-the structured tree model of Olufsen, adopted from Cai et al.  A structured
-tree terminal impedance is a frequency-domain quantity Z(omega), not a
-series resistor, and the manuscript never states how the Table 1 values
-enter the discrete system.  Treating them as resistors is an assumption the
-paper does not license, so Z is skipped here.
+NOTE ON Z
+---------
+The terminal impedance of Table 1 is not used.  Eq. (24) sets outlet pressure
+equal to the intramyocardial pressure directly and Z does not appear in it;
+the paper describes Z only as a structured-tree quantity and never states how
+it enters the discrete system.  Set `terminal_resistance` to add a uniform
+lumped resistance downstream of each territory.
 
-Consequence: with no downstream resistance, terminal flows are set by the
-epicardial resistances alone and come out well above physiological.  See the
-flow comparison printed by the test script.  Revisit once the authors
-clarify, or replace with a lumped terminal resistance calibrated to a target
-flow.
-
-COMPLIANCE PLACEMENT
---------------------
-Fig. 3(b) draws the capacitance at the distal end but notes the topology
-depends on the choice of alpha and beta; the paper uses alpha = beta = 1/2,
-which puts the segment average mid-segment.  'distal' assigns C_s to node_d,
-'split' assigns half to each end.  With 'distal', the compliance of a
-terminal segment sits on a pinned node and has no dynamic effect.
-
-Units: kPa, cm^3/s, s.
+Units: kPa, cm^3/s, s.  R in kPa s cm^-3, C in cm^3 kPa^-1.
 """
 
 import numpy as np
@@ -53,86 +43,114 @@ try:
 except ImportError:
     _HAVE_SCIPY = False
 
-from coronary_segments import SEGMENTS, INLET_NODE
-
 
 MMHG_PER_KPA = 7.50062
 
+INLET_NODE = "AO"
 
-SUBTREES = {
-    # Two main trunks straight off the aorta.  Neither has children, so both
-    # are terminals and there are no interior nodes: the system has ZERO
-    # unknowns and reduces to two independent Ohm's law calculations.  The
-    # two paths share only the aortic root, which is pinned, so they cannot
-    # steal flow from one another.
-    "lmca_rca": ["LMCA", "RCA"],
-    "single": ["LMCA"],
-    "series": ["LMCA", "LAD"],
-    "branch": ["LMCA", "LAD", "LAD1", "LAD2"],
-    "lad3":   ["LMCA", "LAD", "LAD1", "LAD2", "LAD3", "LAD4"],
-    "full":   list(SEGMENTS.keys()),
+
+# Wang et al., Table 1 -- the two trunks only.
+SEGMENTS = {
+    "LMCA": dict(name="Left main coronary artery",
+                 R=0.2156, L=0.0227, C=0.0003,
+                 node_p="AO", node_d="T_LMCA"),
+
+    "RCA":  dict(name="Right coronary artery",
+                 R=1.6671, L=0.1164, C=0.0006,
+                 node_p="AO", node_d="T_RCA"),
 }
 
+SEGMENT_ORDER = ["LMCA", "RCA"]
 
-# AHA-17 territories for the LAD terminals (Wang et al., p. 13).  Duplicated
-# here only so this file runs standalone; production code must import
-# PERFUSION_REGIONS from dependencies/aha_segmentation.py.
-PERFUSION_REGIONS_LAD = {
-    "LAD1": [1, 2, 8],
-    "LAD3": [13, 14, 17],
-    "LAD4": [7],
-}
 
-# Two-territory split for the "lmca_rca" subtree, following the conventional
-# AHA coronary distribution: the left main supplies the LAD and LCX
-# territories, the right coronary supplies the inferior wall.  Together these
-# are an exact partition of all 17 segments.
-PERFUSION_REGIONS_LMCA_RCA = {
+# AHA-17 territories.  Conventional coronary distribution: the left main
+# supplies the LAD and LCX territories, the right coronary the inferior wall.
+# Together these are an exact partition of segments 1..17.
+PERFUSION_REGIONS = {
     "LMCA": [1, 2, 5, 6, 7, 8, 11, 12, 13, 14, 16, 17],
     "RCA":  [3, 4, 9, 10, 15],
 }
 
 
-class CoronaryRC(object):
+def check_table():
+    """Fail loudly on a malformed table rather than producing plausible
+    numbers from a broken one."""
+    errors = []
 
-    def __init__(self, segment_names, dt, compliance_placement="distal",
-                 terminal_resistance=None):
-        if compliance_placement not in ("distal", "split"):
-            raise ValueError("compliance_placement must be 'distal' or 'split'")
+    for s in SEGMENT_ORDER:
+        if s not in SEGMENTS:
+            errors.append("%s is listed in SEGMENT_ORDER but not defined" % s)
+    for s in SEGMENTS:
+        if s not in SEGMENT_ORDER:
+            errors.append("%s is defined but missing from SEGMENT_ORDER" % s)
+
+    for s, d in SEGMENTS.items():
+        for k in ("R", "C"):
+            if d[k] <= 0.0:
+                errors.append("%s has non-positive %s = %r" % (s, k, d[k]))
+        if d["node_p"] != INLET_NODE:
+            errors.append("%s does not start at the aortic root" % s)
+        if d["node_p"] == d["node_d"]:
+            errors.append("%s is a self-loop" % s)
+
+    distal = [d["node_d"] for d in SEGMENTS.values()]
+    if len(set(distal)) != len(distal):
+        errors.append("two segments share a distal node")
+
+    covered = sorted(sum(PERFUSION_REGIONS.values(), []))
+    if covered != list(range(1, 18)):
+        errors.append("perfusion territories do not partition AHA 1..17: %s"
+                      % covered)
+    for s in PERFUSION_REGIONS:
+        if s not in SEGMENTS:
+            errors.append("territory declared for unknown segment %s" % s)
+
+    if errors:
+        raise AssertionError("coronary table is malformed:\n  - "
+                             + "\n  - ".join(errors))
+
+
+check_table()
+
+
+class CoronaryRC(object):
+    """Node-based R-C coronary network.
+
+    Pressures are the states and flows are algebraic across resistances,
+    matching MyoFE's circulation model.  Nodes are either pinned (the aortic
+    root and every territory outlet) or free (interior junctions, of which
+    there are none in the two-trunk configuration).
+    """
+
+    def __init__(self, segment_names, dt, terminal_resistance=None):
+
         self.names = list(segment_names)
+        for s in self.names:
+            if s not in SEGMENTS:
+                raise ValueError("unknown segment '%s'; available: %s"
+                                 % (s, SEGMENT_ORDER))
         self.dt = dt
-        self.placement = compliance_placement
         self.Rt = terminal_resistance
 
-        node_owner = {}
-        for s in self.names:
-            node_owner[SEGMENTS[s]["node_d"]] = s
-        for s in self.names:
-            pnode = SEGMENTS[s]["node_p"]
-            if pnode != INLET_NODE and pnode not in node_owner:
-                raise ValueError(
-                    "segment %s needs its parent at node %s, which is not in "
-                    "the selected subtree" % (s, pnode))
-
-        upstream = set(SEGMENTS[s]["node_p"] for s in self.names)
         nodes = set()
         for s in self.names:
             nodes.add(SEGMENTS[s]["node_p"])
             nodes.add(SEGMENTS[s]["node_d"])
 
+        upstream = set(SEGMENTS[s]["node_p"] for s in self.names)
         self.terminal_nodes = sorted(n for n in nodes
                                      if n != INLET_NODE and n not in upstream)
+
         if self.Rt is None:
             self.free_nodes = sorted(n for n in nodes
                                      if n != INLET_NODE
                                      and n not in self.terminal_nodes)
         else:
             self.free_nodes = sorted(n for n in nodes if n != INLET_NODE)
+
         self.idx = dict((n, i) for i, n in enumerate(self.free_nodes))
         self.n = len(self.free_nodes)
 
-        # segment feeding each terminal node: its flow is the perfusion
-        # quantity Q that will feed Eq. 19
         self.terminal_segment = dict(
             (SEGMENTS[s]["node_d"], s) for s in self.names
             if SEGMENTS[s]["node_d"] in self.terminal_nodes)
@@ -140,12 +158,7 @@ class CoronaryRC(object):
 
         self.C = dict((n, 0.0) for n in nodes)
         for s in self.names:
-            c = SEGMENTS[s]["C"]
-            if self.placement == "distal":
-                self.C[SEGMENTS[s]["node_d"]] += c
-            else:
-                self.C[SEGMENTS[s]["node_d"]] += 0.5 * c
-                self.C[SEGMENTS[s]["node_p"]] += 0.5 * c
+            self.C[SEGMENTS[s]["node_d"]] += SEGMENTS[s]["C"]
 
         self._assemble()
 
@@ -155,8 +168,7 @@ class CoronaryRC(object):
         return P_IMP[self.terminal_segment[node]]
 
     def _assemble(self):
-        n = self.n
-        A = np.zeros((n, n))
+        A = np.zeros((self.n, self.n))
         for node in self.free_nodes:
             i = self.idx[node]
             A[i, i] += self.C[node] / self.dt
@@ -172,7 +184,7 @@ class CoronaryRC(object):
             for nd in self.terminal_nodes:
                 A[self.idx[nd], self.idx[nd]] += 1.0 / self.Rt
         self.A = A
-        if _HAVE_SCIPY and n > 0:
+        if _HAVE_SCIPY and self.n > 0:
             self._lu = lu_factor(A)
 
     def _bc_load(self, P_AO, P_IMP):
@@ -185,8 +197,7 @@ class CoronaryRC(object):
                     b[self.idx[u]] += g * self._pinned(v, P_AO, P_IMP)
         if self.Rt is not None:
             for nd in self.terminal_nodes:
-                b[self.idx[nd]] += (P_IMP[self.terminal_segment[nd]]
-                                    / self.Rt)
+                b[self.idx[nd]] += (P_IMP[self.terminal_segment[nd]] / self.Rt)
         return b
 
     def step(self, P_prev, P_AO, P_IMP):
@@ -215,7 +226,7 @@ class CoronaryRC(object):
         return self._pinned(node, P_AO, P_IMP)
 
     def flows(self, P, P_AO, P_IMP):
-        """Flow through every segment, positive proximal to distal."""
+        """Flow through each segment, positive from aorta into myocardium."""
         q = {}
         for s in self.names:
             pa = self.pressure(P, SEGMENTS[s]["node_p"], P_AO, P_IMP)
@@ -224,27 +235,58 @@ class CoronaryRC(object):
         return q
 
     def perfusion(self, P, P_AO, P_IMP):
-        """Flow actually delivered into each territory.  With no terminal
-        resistance this equals the terminal segment flow; with one it is the
-        flow across that resistance."""
+        """Flow delivered into each territory."""
         if self.Rt is None:
             q = self.flows(P, P_AO, P_IMP)
             return dict((s, q[s]) for s in self.terminals)
-        out = {}
-        for nd in self.terminal_nodes:
-            s = self.terminal_segment[nd]
-            out[s] = (P[self.idx[nd]] - P_IMP[s]) / self.Rt
-        return out
+        return dict((self.terminal_segment[nd],
+                     (P[self.idx[nd]] - P_IMP[self.terminal_segment[nd]])
+                     / self.Rt)
+                    for nd in self.terminal_nodes)
 
     def describe(self):
         print("  segments  : %d  %s" % (len(self.names), ", ".join(self.names)))
         print("  free nodes: %d  %s"
               % (self.n, ", ".join(self.free_nodes) if self.n else "(none)"))
-        print("  pinned    : %-9s = P_AO" % INLET_NODE)
+        print("  pinned    : %-8s = P_AO" % INLET_NODE)
         for nd in self.terminal_nodes:
-            print("              %-9s = P_IMP[%s]"
+            print("              %-8s = P_IMP[%s]"
                   % (nd, self.terminal_segment[nd]))
-        print("  compliance: %s placement" % self.placement)
         if self.Rt is not None:
-            print("  terminal R: %.4g (uniform, diagnostic only)"
-                  % self.Rt)
+            print("  terminal R: %.4g (uniform)" % self.Rt)
+
+
+SUBTREES = {"lmca_rca": SEGMENT_ORDER}
+
+
+if __name__ == "__main__":
+
+    print("Coronary segments")
+    print("=" * 62)
+    print("%-6s %9s %10s   %-6s -> %-8s  AHA territory"
+          % ("seg", "R", "C", "prox", "dist"))
+    for s in SEGMENT_ORDER:
+        d = SEGMENTS[s]
+        print("%-6s %9.4f %10.5f   %-6s -> %-8s  %s"
+              % (s, d["R"], d["C"], d["node_p"], d["node_d"],
+                 PERFUSION_REGIONS[s]))
+
+    print()
+    m = CoronaryRC(SEGMENT_ORDER, 1.0e-3)
+    m.describe()
+
+    print()
+    print("Steady state, P_AO = 90 mmHg, IMP = 0")
+    print("=" * 62)
+    P_AO = 90.0 / MMHG_PER_KPA
+    P_IMP = dict((s, 0.0) for s in m.terminals)
+    P = m.steady_state(P_AO, P_IMP)
+    q = m.flows(P, P_AO, P_IMP)
+    total = 0.0
+    for s in m.terminals:
+        R = SEGMENTS[s]["R"]
+        print("  %-5s Q = (%.4f - 0)/%.4f = %8.3f cm3/s = %6.0f mL/min"
+              % (s, P_AO, R, q[s], q[s] * 60.0))
+        total += q[s]
+    print("  total%29.3f cm3/s = %6.0f mL/min" % (total, total * 60.0))
+    print("  physiological whole-heart coronary flow is roughly 250 mL/min")

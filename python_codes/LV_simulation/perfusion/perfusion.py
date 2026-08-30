@@ -49,8 +49,6 @@ class perfusion(object):
         self.tree = CoronaryRC(
             SUBTREES[subtree],
             1.0,
-            compliance_placement=self.model.get('compliance_placement',
-                                                'distal'),
             terminal_resistance=self.model.get('terminal_resistance', None))
 
         # prescribed IMP placeholder, peak values in mmHg per territory
@@ -77,8 +75,6 @@ class perfusion(object):
         self.tree = CoronaryRC(
             SUBTREES[self.subtree],
             time_step,
-            compliance_placement=self.model.get('compliance_placement',
-                                                'distal'),
             terminal_resistance=self.model.get('terminal_resistance', None))
         P_AO_kPa = self.initial_pressure_arteries / MMHG_PER_KPA
         self.P = self.tree.steady_state(P_AO_kPa,

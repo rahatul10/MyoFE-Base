@@ -43,10 +43,10 @@
             "activations": [
                 {
                     "t_stop_s": [
-                        60
+                        600
                     ], 
                     "t_start_s": [
-                        5
+                        500
                     ]
                 }
             ]
@@ -585,13 +585,13 @@
                     false
                 ], 
                 "rel_tol": [
-                    1e-08
+                    1e-04
                 ], 
                 "max_iter": [
                     300
                 ], 
                 "abs_tol": [
-                    1e-08
+                    1e-04
                 ]
             }
         }, 

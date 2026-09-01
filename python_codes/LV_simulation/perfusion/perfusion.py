@@ -9,6 +9,10 @@ Stage 2 -- one-way coupling only.
 Nothing computed here feeds back into the mechanics, so this cannot
 destabilise a simulation.  Eq. 17 (real IMP) and Eqs. 19-20 (eta) come later.
 
+The configuration is chosen in the JSON with "subtree".  Territories,
+terminal resistances and the exposed data columns all follow from it, so
+growing the tree needs no change in this file.
+
 UNITS
 -----
 MyoFE's circulation works in mmHg (see circulation.py, the 0.0075 factor
@@ -21,8 +25,7 @@ Python 2.7 compatible.
 
 import numpy as np
 
-from .coronary_rc import (CoronaryRC, SUBTREES, MMHG_PER_KPA,
-                          TERMINAL_RESISTANCE)
+from .coronary_rc import CoronaryRC, SUBTREES, MMHG_PER_KPA
 
 
 class perfusion(object):
@@ -37,12 +40,12 @@ class perfusion(object):
             self.model[k] = perfusion_struct[k][0]
 
         # Downstream resistance replacing the microcirculation removed by
-        # truncating the tree.  JSON may override; default is calibrated to
-        # measured resting flows (see coronary_rc.TERMINAL_RESISTANCE).
-        self.terminal_resistance = self.model.get('terminal_resistance',
-                                                  TERMINAL_RESISTANCE)
+        # truncating the tree.  None means use the calibrated table for this
+        # configuration (see coronary_rc.TERMINAL_RESISTANCE); JSON may
+        # override with a dict keyed by territory.
+        self.terminal_resistance = self.model.get('terminal_resistance', None)
 
-        subtree = self.model.get('subtree', 'lmca_rca')
+        subtree = self.model.get('subtree', 'lad_lcx_rca')
         if subtree not in SUBTREES:
             raise ValueError("unknown coronary subtree '%s'; options are %s"
                              % (subtree, sorted(SUBTREES.keys())))
@@ -50,11 +53,13 @@ class perfusion(object):
         # The protocol (and therefore the timestep) does not exist yet when
         # LV_simulation.__init__ runs -- self.prot is created later, inside
         # run_simulation().  The tree is therefore built lazily on the first
-        # call to implement_time_step, when dt is known.
+        # call to implement_time_step, when dt is known.  A throwaway tree is
+        # built here only so the territory names, and hence the output column
+        # names, are known before create_data_structure runs.
         self.subtree = subtree
         self.time_step = None
         self.tree = CoronaryRC(
-            SUBTREES[subtree],
+            subtree,
             1.0,
             terminal_resistance=self.terminal_resistance)
 
@@ -80,7 +85,7 @@ class perfusion(object):
         because the protocol does not exist until run_simulation()."""
         self.time_step = time_step
         self.tree = CoronaryRC(
-            SUBTREES[self.subtree],
+            self.subtree,
             time_step,
             terminal_resistance=self.terminal_resistance)
         P_AO_kPa = self.initial_pressure_arteries / MMHG_PER_KPA

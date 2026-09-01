@@ -21,7 +21,8 @@ Python 2.7 compatible.
 
 import numpy as np
 
-from .coronary_rc import CoronaryRC, SUBTREES, MMHG_PER_KPA
+from .coronary_rc import (CoronaryRC, SUBTREES, MMHG_PER_KPA,
+                          TERMINAL_RESISTANCE)
 
 
 class perfusion(object):
@@ -35,7 +36,13 @@ class perfusion(object):
         for k in perfusion_struct.keys():
             self.model[k] = perfusion_struct[k][0]
 
-        subtree = self.model.get('subtree', 'lad3')
+        # Downstream resistance replacing the microcirculation removed by
+        # truncating the tree.  JSON may override; default is calibrated to
+        # measured resting flows (see coronary_rc.TERMINAL_RESISTANCE).
+        self.terminal_resistance = self.model.get('terminal_resistance',
+                                                  TERMINAL_RESISTANCE)
+
+        subtree = self.model.get('subtree', 'lmca_rca')
         if subtree not in SUBTREES:
             raise ValueError("unknown coronary subtree '%s'; options are %s"
                              % (subtree, sorted(SUBTREES.keys())))
@@ -49,7 +56,7 @@ class perfusion(object):
         self.tree = CoronaryRC(
             SUBTREES[subtree],
             1.0,
-            terminal_resistance=self.model.get('terminal_resistance', None))
+            terminal_resistance=self.terminal_resistance)
 
         # prescribed IMP placeholder, peak values in mmHg per territory
         self.imp_peak_mmHg = self.model.get('imp_peak', {})
@@ -75,7 +82,7 @@ class perfusion(object):
         self.tree = CoronaryRC(
             SUBTREES[self.subtree],
             time_step,
-            terminal_resistance=self.model.get('terminal_resistance', None))
+            terminal_resistance=self.terminal_resistance)
         P_AO_kPa = self.initial_pressure_arteries / MMHG_PER_KPA
         self.P = self.tree.steady_state(P_AO_kPa,
                                         self.return_prescribed_imp(0.0))

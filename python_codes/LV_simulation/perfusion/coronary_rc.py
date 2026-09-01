@@ -24,13 +24,19 @@ here.  The circuit is purely resistive until the tree is extended and
 interior junctions appear.  The machinery is kept so that adding branches
 later needs no rewrite.
 
-NOTE ON Z
----------
-The terminal impedance of Table 1 is not used.  Eq. (24) sets outlet pressure
-equal to the intramyocardial pressure directly and Z does not appear in it;
-the paper describes Z only as a structured-tree quantity and never states how
-it enters the discrete system.  Set `terminal_resistance` to add a uniform
-lumped resistance downstream of each territory.
+TERMINAL RESISTANCE
+-------------------
+The paper calls each segment a four-element Windkessel: R, L, C and the
+terminal impedance Z.  In the full tree only the eight leaves carry a Z --
+LMCA and RCA are conduits that feed further branches, so they have none.
+Truncating the tree at LMCA and RCA therefore removes everything that
+provided the downstream resistance, and without a replacement the flow is
+roughly an order of magnitude too high.
+
+`terminal_resistance` supplies that replacement.  It stands in for the
+microcirculation below the cut, and is given per territory because the two
+beds are not equivalent: the values below are set to reproduce measured
+resting flows rather than transcribed from Table 1.
 
 Units: kPa, cm^3/s, s.  R in kPa s cm^-3, C in cm^3 kPa^-1.
 """
@@ -69,6 +75,29 @@ SEGMENT_ORDER = ["LMCA", "RCA"]
 PERFUSION_REGIONS = {
     "LMCA": [1, 2, 5, 6, 7, 8, 11, 12, 13, 14, 16, 17],
     "RCA":  [3, 4, 9, 10, 15],
+}
+
+
+# Downstream resistance standing in for the microcirculation removed by
+# truncating the tree at the two trunks.
+#
+# Calibrated on the CYCLE-MEAN flow under pulsatile aortic pressure and a
+# systolic IMP pulse -- not on the steady-state solution, because systolic
+# compression lowers the mean by roughly 15% and calibrating without it
+# leaves the running model short of target.
+#
+# Level: 250 mL/min total, the conventional resting coronary flow (about 5%
+# of a 5 L/min cardiac output).  Split: 65.6% left / 34.4% right, from the
+# resting per-vessel flows measured by Wieneke et al. (intracoronary Doppler
+# + IVUS, n=28, angiographically smooth arteries; LAD 76.15, LCX 54.62,
+# RCA 68.46, total 197.1 +/- 71.9 mL/min).  Their total is lower than 250,
+# as expected for sedated supine patients, and 250 is well within their SD.
+#
+# These values are calibration, not measurements, and depend on mean aortic
+# pressure and on the prescribed IMP.  Recalibrate when real IMP arrives.
+TERMINAL_RESISTANCE = {
+    "LMCA": 3.190,
+    "RCA":  5.345,
 }
 
 
@@ -123,6 +152,9 @@ class CoronaryRC(object):
     """
 
     def __init__(self, segment_names, dt, terminal_resistance=None):
+        """terminal_resistance may be None (no downstream resistance), a
+        single number applied to every territory, or a dict keyed by
+        terminal segment name."""
 
         self.names = list(segment_names)
         for s in self.names:
@@ -130,7 +162,6 @@ class CoronaryRC(object):
                 raise ValueError("unknown segment '%s'; available: %s"
                                  % (s, SEGMENT_ORDER))
         self.dt = dt
-        self.Rt = terminal_resistance
 
         nodes = set()
         for s in self.names:
@@ -140,6 +171,27 @@ class CoronaryRC(object):
         upstream = set(SEGMENTS[s]["node_p"] for s in self.names)
         self.terminal_nodes = sorted(n for n in nodes
                                      if n != INLET_NODE and n not in upstream)
+
+        # resolve terminal resistance into a per-segment dict
+        term_segs = [s for s in self.names
+                     if SEGMENTS[s]["node_d"] in self.terminal_nodes]
+        if terminal_resistance is None:
+            self.Rt = None
+        elif isinstance(terminal_resistance, dict):
+            missing = [s for s in term_segs if s not in terminal_resistance]
+            if missing:
+                raise ValueError(
+                    "terminal_resistance is missing entries for %s" % missing)
+            self.Rt = dict((s, float(terminal_resistance[s]))
+                           for s in term_segs)
+        else:
+            self.Rt = dict((s, float(terminal_resistance)) for s in term_segs)
+        if self.Rt is not None:
+            for s, v in self.Rt.items():
+                if v <= 0.0:
+                    raise ValueError(
+                        "terminal_resistance for %s must be positive, got %r"
+                        % (s, v))
 
         if self.Rt is None:
             self.free_nodes = sorted(n for n in nodes
@@ -182,7 +234,8 @@ class CoronaryRC(object):
                         A[self.idx[u], self.idx[v]] -= g
         if self.Rt is not None:
             for nd in self.terminal_nodes:
-                A[self.idx[nd], self.idx[nd]] += 1.0 / self.Rt
+                s = self.terminal_segment[nd]
+                A[self.idx[nd], self.idx[nd]] += 1.0 / self.Rt[s]
         self.A = A
         if _HAVE_SCIPY and self.n > 0:
             self._lu = lu_factor(A)
@@ -197,7 +250,8 @@ class CoronaryRC(object):
                     b[self.idx[u]] += g * self._pinned(v, P_AO, P_IMP)
         if self.Rt is not None:
             for nd in self.terminal_nodes:
-                b[self.idx[nd]] += (P_IMP[self.terminal_segment[nd]] / self.Rt)
+                s = self.terminal_segment[nd]
+                b[self.idx[nd]] += P_IMP[s] / self.Rt[s]
         return b
 
     def step(self, P_prev, P_AO, P_IMP):
@@ -239,10 +293,11 @@ class CoronaryRC(object):
         if self.Rt is None:
             q = self.flows(P, P_AO, P_IMP)
             return dict((s, q[s]) for s in self.terminals)
-        return dict((self.terminal_segment[nd],
-                     (P[self.idx[nd]] - P_IMP[self.terminal_segment[nd]])
-                     / self.Rt)
-                    for nd in self.terminal_nodes)
+        out = {}
+        for nd in self.terminal_nodes:
+            s = self.terminal_segment[nd]
+            out[s] = (P[self.idx[nd]] - P_IMP[s]) / self.Rt[s]
+        return out
 
     def describe(self):
         print("  segments  : %d  %s" % (len(self.names), ", ".join(self.names)))
@@ -253,7 +308,9 @@ class CoronaryRC(object):
             print("              %-8s = P_IMP[%s]"
                   % (nd, self.terminal_segment[nd]))
         if self.Rt is not None:
-            print("  terminal R: %.4g (uniform)" % self.Rt)
+            print("  terminal R: %s"
+                  % ", ".join("%s=%.4g" % (s, self.Rt[s])
+                              for s in sorted(self.Rt)))
 
 
 SUBTREES = {"lmca_rca": SEGMENT_ORDER}

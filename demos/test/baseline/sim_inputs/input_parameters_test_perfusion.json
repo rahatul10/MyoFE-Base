@@ -515,8 +515,8 @@
             ]
         },
         "perfusion": {
-            "subtree": ["lmca_rca"],
-            "imp_peak": [{"LMCA": 70.0, "RCA": 50.0}]
+            "subtree": ["lad_lcx_rca"],
+            "imp_peak": [{"LAD": 70.0, "LCX": 70.0, "RCA": 50.0}]
         }
         
     }, 

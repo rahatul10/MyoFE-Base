@@ -894,7 +894,7 @@ class LV_simulation():
                 self.handle_output(output_struct)
                 return
         
-            if i % 5000 == 0:
+            if i % 1000 == 0:
                 self.handle_output(output_struct)
         
 

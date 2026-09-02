@@ -135,10 +135,15 @@ PERFUSION_REGIONS = {
 # ---------------------------------------------------------------------------
 # Terminal resistances, per configuration.
 # ---------------------------------------------------------------------------
-# Calibrated on the CYCLE-MEAN flow driven by the aortic pressure recorded in
-# a completed 20,000-step run (mean P_AO 85.9 mmHg, baroreflex inactive) with
-# the prescribed systolic IMP active -- not on the steady state, because
-# systolic compression lowers the mean by roughly 15%.
+# Calibrated on the CYCLE-MEAN flow driven by the aortic pressure recorded
+# in a completed run (circ.data['pressure_aorta'], mean 86.0 mmHg over the
+# converged window, baroreflex inactive) with the prescribed systolic IMP
+# active -- not on the steady state, because systolic compression lowers the
+# mean by roughly 15%.
+#
+# NOTE the inlet is the aorta compartment, not arteries.  The coronary ostia
+# sit in the aortic root, upstream of the systemic arterial resistance; the
+# two differ by about 1.5 mmHg and these values assume the former.
 #
 # Level: 250 mL/min total, the conventional resting coronary flow (about 5%
 # of a 5 L/min cardiac output).
@@ -155,13 +160,13 @@ PERFUSION_REGIONS = {
 
 TERMINAL_RESISTANCE = {
     "lmca_rca": {
-        "LMCA": 3.0287,
-        "RCA":  5.0458,
+        "LMCA": 3.0054,
+        "RCA":  5.0151,
     },
     "lad_lcx_rca": {
-        "LAD":  4.7712,
-        "LCX":  6.9122,
-        "RCA":  5.0458,
+        "LAD":  4.7311,
+        "LCX":  6.8564,
+        "RCA":  5.0151,
     },
 }
 
@@ -482,9 +487,9 @@ if __name__ == "__main__":
     m.describe()
 
     print()
-    print("Steady state, P_AO = 85.9 mmHg, IMP = 0")
+    print("Steady state, P_AO = 86.0 mmHg, IMP = 0")
     print("=" * 70)
-    P_AO = 85.9 / MMHG_PER_KPA
+    P_AO = 86.0 / MMHG_PER_KPA
     P_IMP = dict((s, 0.0) for s in m.terminals)
     P = m.steady_state(P_AO, P_IMP)
     q = m.perfusion(P, P_AO, P_IMP)

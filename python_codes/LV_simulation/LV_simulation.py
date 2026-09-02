@@ -963,7 +963,7 @@ class LV_simulation():
 
         # Advance the coronary tree with the current aortic pressure
         if (self.perf):
-            self.perf.implement_time_step(self.circ.data['pressure_arteries'],
+            self.perf.implement_time_step(self.circ.data['pressure_aorta'],
                                           time_step,
                                           self.data['time'])
 

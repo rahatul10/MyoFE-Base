@@ -37,7 +37,7 @@
             ]
         }, 
         "no_of_time_steps": [
-            12000
+            15000
         ], 
         "baroreflex": {
             "activations": [
@@ -515,8 +515,8 @@
             ]
         },
         "perfusion": {
-            "subtree": ["lad_lcx_rca"],
-            "imp_peak": [{"LAD": 70.0, "LCX": 70.0, "RCA": 50.0}]
+            "subtree": ["lad12_lcx_rca"],
+            "imp_peak": [{"LAD1": 70.0, "LAD2": 70.0, "LCX": 70.0, "RCA": 50.0}]
         }
         
     }, 

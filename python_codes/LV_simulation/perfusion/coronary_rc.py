@@ -95,7 +95,15 @@ SEGMENTS = {
 
     "LAD":  dict(name="Left anterior descending artery",
                  R=0.4299, L=0.0294, C=0.0002,
-                 node_p="N_LMCA", node_d="T_LAD"),
+                 node_p="N_LMCA", node_d="N_LAD"),
+
+    "LAD1": dict(name="First LAD branch",
+                 R=0.4944, L=0.0327, C=0.00020, Z=145.60,
+                 node_p="N_LAD",  node_d="T_LAD1"),
+
+    "LAD2": dict(name="LAD continuation",
+                 R=2.3796, L=0.1107, C=0.00030,
+                 node_p="N_LAD",  node_d="N_LAD2"),
 
     "LCX":  dict(name="Left circumflex artery",
                  R=0.3390, L=0.0230, C=0.0001,
@@ -106,7 +114,7 @@ SEGMENTS = {
                  node_p="AO",     node_d="T_RCA"),
 }
 
-SEGMENT_ORDER = ["LMCA", "LAD", "LCX", "RCA"]
+SEGMENT_ORDER = ["LMCA", "LAD", "LAD1", "LAD2", "LCX", "RCA"]
 
 
 # ---------------------------------------------------------------------------
@@ -118,13 +126,16 @@ SEGMENT_ORDER = ["LMCA", "LAD", "LCX", "RCA"]
 SUBTREES = {
     "lmca_rca":    ["LMCA", "RCA"],
     "lad_lcx_rca": ["LMCA", "LAD", "LCX", "RCA"],
+    "lad12_lcx_rca": ["LMCA", "LAD", "LAD1", "LAD2", "LCX", "RCA"],
 }
 
 # 'lmca_rca' needs LMCA to be a leaf, which contradicts the table above where
 # it feeds N_LMCA.  Rather than carry two tables, that configuration rewires
 # LMCA's distal node when it is selected; see _resolve_segments.
 _LEAF_OVERRIDE = {
-    "lmca_rca": {"LMCA": "T_LMCA"},
+    "lmca_rca":     {"LMCA": "T_LMCA"},
+    "lad_lcx_rca":  {"LAD": "T_LAD"},
+    "lad12_lcx_rca": {"LAD2": "T_LAD2"},
 }
 
 
@@ -144,6 +155,12 @@ PERFUSION_REGIONS = {
     },
     "lad_lcx_rca": {
         "LAD":  [1, 2, 7, 8, 13, 14, 17],
+        "LCX":  [5, 6, 11, 12, 16],
+        "RCA":  [3, 4, 9, 10, 15],
+    },
+    "lad12_lcx_rca": {
+        "LAD1": [1, 2],
+        "LAD2": [7, 8, 13, 14, 17],
         "LCX":  [5, 6, 11, 12, 16],
         "RCA":  [3, 4, 9, 10, 15],
     },
@@ -190,6 +207,12 @@ TERMINAL_RESISTANCE = {
         "LAD":  40.496,
         "LCX":  56.720,
         "RCA":  48.410,
+    },
+    "lad12_lcx_rca": {
+        "LAD1": 145.60,
+        "LAD2":  53.623,
+        "LCX":   56.720,
+        "RCA":   48.410,
     },
 }
 

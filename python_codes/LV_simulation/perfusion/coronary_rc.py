@@ -48,7 +48,27 @@ L is carried in the table but not used, matching MyoFE's circulation model.
 Over a periodic cycle the integral of L dQ/dt is exactly zero, so dropping L
 leaves the cycle-mean flow unchanged and affects only waveform shape.
 
-Units: kPa, cm^3/s, s.  R and Rt in kPa s cm^-3, C in cm^3 kPa^-1.
+UNITS
+-----
+mmHg, mL/s, s.  R and Rt in mmHg s mL^-1, C in mL mmHg^-1, L in mmHg s^2
+mL^-1.  This matches MyoFE's circulation model, so no conversion happens
+anywhere in this module.
+
+Wang et al.'s Table 1 labels these values kPa s cm^-3, but that label is
+almost certainly wrong.  The table derives from Duanmu et al., Sci Rep
+8:874 (2018), whose equivalent table is explicitly in mmHg s mL^-1 with
+values of the same magnitude (their RCA 1.64 against 1.6671 here; PDA 2.31
+against 2.1974; PLA 1.31 against 1.2531) -- and RCA anatomy does not vary
+by a factor of 7.5 between patients.  Three checks agree:
+
+  1. Read as kPa, the full 16-segment tree with Table 1's Z gives 52.6
+     mL/min, about a fifth of physiological.  Read as mmHg it gives 395.
+  2. Wang's own reported peak flows (LAD1 0.669, LAD4 1.205 mL/s) are
+     reproduced to 11% by the kPa reading and to 80-86% by the mmHg
+     reading, the remainder being peak-versus-steady-state.
+  3. Vessel lengths implied by R and L under Poiseuille are absurd in kPa
+     (LMCA 187 mm, RCA 636 mm) and anatomical in mmHg (25 mm, 85 mm).
+
 Python 2.7 compatible.
 """
 
@@ -60,8 +80,6 @@ try:
 except ImportError:
     _HAVE_SCIPY = False
 
-
-MMHG_PER_KPA = 7.50062
 
 INLET_NODE = "AO"
 
@@ -136,10 +154,15 @@ PERFUSION_REGIONS = {
 # Terminal resistances, per configuration.
 # ---------------------------------------------------------------------------
 # Calibrated on the CYCLE-MEAN flow driven by the aortic pressure recorded
-# in a completed run (circ.data['pressure_aorta'], mean 86.0 mmHg over the
+# in a completed run (circ.data['pressure_aorta'], mean 86.6 mmHg over the
 # converged window, baroreflex inactive) with the prescribed systolic IMP
 # active -- not on the steady state, because systolic compression lowers the
 # mean by roughly 15%.
+#
+# Sanity check on the magnitudes: Duanmu et al. report per-terminal values
+# of 47-290 mmHg s mL^-1 for nine terminals, validated against measured
+# perfusion resistance.  Three of those in parallel is around 50, which is
+# where these land.  They did not, under the earlier kPa reading.
 #
 # NOTE the inlet is the aorta compartment, not arteries.  The coronary ostia
 # sit in the aortic root, upstream of the systemic arterial resistance; the
@@ -160,13 +183,13 @@ PERFUSION_REGIONS = {
 
 TERMINAL_RESISTANCE = {
     "lmca_rca": {
-        "LMCA": 3.0054,
-        "RCA":  5.0151,
+        "LMCA": 23.832,
+        "RCA":  48.410,
     },
     "lad_lcx_rca": {
-        "LAD":  4.7311,
-        "LCX":  6.8564,
-        "RCA":  5.0151,
+        "LAD":  40.496,
+        "LCX":  56.720,
+        "RCA":  48.410,
     },
 }
 
@@ -489,26 +512,24 @@ if __name__ == "__main__":
     print()
     print("Steady state, P_AO = 86.0 mmHg, IMP = 0")
     print("=" * 70)
-    P_AO = 86.0 / MMHG_PER_KPA
+    P_AO = 86.0
     P_IMP = dict((s, 0.0) for s in m.terminals)
     P = m.steady_state(P_AO, P_IMP)
     q = m.perfusion(P, P_AO, P_IMP)
     total = 0.0
     for s in m.terminals:
-        print("  %-5s %8.3f cm3/s = %6.1f mL/min" % (s, q[s], q[s] * 60.0))
+        print("  %-5s %8.3f mL/s = %6.1f mL/min" % (s, q[s], q[s] * 60.0))
         total += q[s]
-    print("  total %8.3f cm3/s = %6.1f mL/min" % (total, total * 60.0))
+    print("  total %8.3f mL/s = %6.1f mL/min" % (total, total * 60.0))
 
     print()
     print("Steal check -- systolic peak, IMP 70/70/50 mmHg")
     print("=" * 70)
-    P_IMP = dict(zip(["LAD", "LCX", "RCA"],
-                     [70.0 / MMHG_PER_KPA, 70.0 / MMHG_PER_KPA,
-                      50.0 / MMHG_PER_KPA]))
+    P_IMP = {"LAD": 70.0, "LCX": 70.0, "RCA": 50.0}
     P = m.steady_state(P_AO, P_IMP)
     q = m.perfusion(P, P_AO, P_IMP)
     for s in m.terminals:
-        print("  %-5s %8.3f cm3/s   %s"
+        print("  %-5s %8.3f mL/s   %s"
               % (s, q[s], "forward" if q[s] > 0 else "REVERSED -- steal"))
     if min(q.values()) <= 0.0:
         raise AssertionError("flow reverses under peak systolic compression")

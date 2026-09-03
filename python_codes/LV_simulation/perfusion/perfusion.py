@@ -15,17 +15,22 @@ growing the tree needs no change in this file.
 
 UNITS
 -----
-MyoFE's circulation works in mmHg (see circulation.py, the 0.0075 factor
-converting LV cavity pressure from Pa).  The coronary tree follows the paper
-and works in kPa.  Every exchange across this boundary is converted here and
-nowhere else.
+Everything is mmHg.  MyoFE's circulation works in mmHg (see circulation.py,
+the 0.0075 factor converting LV cavity pressure from Pa) and the coronary
+tree now does too, so there is no conversion anywhere in this module.
+
+Wang et al.'s Table 1 is labelled kPa s cm^-3, but the values are almost
+certainly mmHg s mL^-1 -- see the header of coronary_rc.py for the evidence.
+An earlier version of this file divided P_AO by 7.50062 to convert to kPa
+while the resistances were already in mmHg, a 7.5x inconsistency that the
+terminal-resistance calibration silently absorbed.
 
 Python 2.7 compatible.
 """
 
 import numpy as np
 
-from .coronary_rc import CoronaryRC, SUBTREES, MMHG_PER_KPA
+from .coronary_rc import CoronaryRC, SUBTREES
 
 
 class perfusion(object):
@@ -88,8 +93,7 @@ class perfusion(object):
             self.subtree,
             time_step,
             terminal_resistance=self.terminal_resistance)
-        P_AO_kPa = self.initial_pressure_arteries / MMHG_PER_KPA
-        self.P = self.tree.steady_state(P_AO_kPa,
+        self.P = self.tree.steady_state(self.initial_pressure_arteries,
                                         self.return_prescribed_imp(0.0))
 
     def return_cycle_length(self):
@@ -101,7 +105,7 @@ class perfusion(object):
 
     def return_prescribed_imp(self, t):
         """Placeholder for Eq. 17.  Half-sine over systole, zero in diastole.
-        Returns kPa keyed by terminal segment."""
+        Returns mmHg keyed by terminal segment."""
         T = self.return_cycle_length()
         T_sys = self.systole_fraction * T
         phase = t - T * np.floor(t / T)
@@ -109,13 +113,14 @@ class perfusion(object):
             shape = np.sin(np.pi * phase / T_sys)
         else:
             shape = 0.0
-        return dict((s, self.imp_peak_mmHg[s] * shape / MMHG_PER_KPA)
+        return dict((s, self.imp_peak_mmHg[s] * shape)
                     for s in self.tree.terminals)
 
     def implement_time_step(self, pressure_arteries, time_step, t):
         """Advance the coronary tree one step.
 
-        pressure_arteries is mmHg, straight from self.circ.data.
+        pressure_aorta is mmHg, straight from self.circ.data, and is used
+        as-is: the coronary tree runs in the same units.
         """
         if self.time_step is None:
             self.build(time_step)
@@ -125,16 +130,15 @@ class perfusion(object):
                 "is stepping at dt=%g; rebuild the tree if dt changes"
                 % (self.time_step, time_step))
 
-        P_AO_kPa = pressure_arteries / MMHG_PER_KPA
-        P_IMP_kPa = self.return_prescribed_imp(t)
+        P_IMP = self.return_prescribed_imp(t)
 
-        self.P = self.tree.step(self.P, P_AO_kPa, P_IMP_kPa)
+        self.P = self.tree.step(self.P, pressure_arteries, P_IMP)
 
-        q = self.tree.perfusion(self.P, P_AO_kPa, P_IMP_kPa)
+        q = self.tree.perfusion(self.P, pressure_arteries, P_IMP)
 
         self.data['coronary_P_AO'] = pressure_arteries
         for s in self.tree.terminals:
             self.data['coronary_flow_' + s] = q[s]
-            self.data['coronary_imp_' + s] = P_IMP_kPa[s] * MMHG_PER_KPA
+            self.data['coronary_imp_' + s] = P_IMP[s]
 
         return q

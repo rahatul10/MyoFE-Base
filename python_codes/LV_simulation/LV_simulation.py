@@ -961,11 +961,6 @@ class LV_simulation():
                 self.mesh.model['functions'][p].vector()[:] = \
                   self.mesh.data[p]
 
-        # Advance the coronary tree with the current aortic pressure
-        if (self.perf):
-            self.perf.implement_time_step(self.circ.data['pressure_aorta'],
-                                          time_step,
-                                          self.data['time'])
 
         self.data['myocardium_vol'] = \
             assemble(1.0*dx(domain = self.mesh.model['mesh']), 
@@ -1121,6 +1116,18 @@ class LV_simulation():
         # 0.0075 is for converting to mm Hg
         self.circ.data['p'][-1] = \
                 0.0075*self.mesh.model['uflforms'].LVcavitypressure()
+
+        # Advance the coronary tree.  This must stay AFTER solvenonlinear()
+        # and after the compartment pressures are recomputed above: it reads
+        # the incompressibility multiplier p and pressure_aorta, and both are
+        # one timestep stale anywhere earlier in this method.
+        if (self.perf):
+            self.perf.implement_time_step(
+                self.circ.data['pressure_aorta'],
+                time_step,
+                self.data['time'],
+                mesh=self.mesh.model['mesh'],
+                p=self.mesh.model['uflforms'].parameters["pressure_variable"])
 
         # Then update FE function for cross-bridge stress, hs_length, and passive stress
         # across the mesh

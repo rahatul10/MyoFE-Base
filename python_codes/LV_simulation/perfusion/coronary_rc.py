@@ -105,6 +105,14 @@ SEGMENTS = {
                  R=2.3796, L=0.1107, C=0.00030,
                  node_p="N_LAD",  node_d="N_LAD2"),
 
+    "LAD3": dict(name="Distal LAD / apical branch",
+                 R=3.1904, L=0.1058, C=0.00010, Z=155.00,
+                 node_p="N_LAD2", node_d="T_LAD3"),
+
+    "LAD4": dict(name="Second diagonal branch",
+                 R=3.6283, L=0.0772, C=0.00001, Z=80.20,
+                 node_p="N_LAD2", node_d="T_LAD4"),
+
     "LCX":  dict(name="Left circumflex artery",
                  R=0.3390, L=0.0230, C=0.0001,
                  node_p="N_LMCA", node_d="T_LCX"),
@@ -114,7 +122,8 @@ SEGMENTS = {
                  node_p="AO",     node_d="T_RCA"),
 }
 
-SEGMENT_ORDER = ["LMCA", "LAD", "LAD1", "LAD2", "LCX", "RCA"]
+SEGMENT_ORDER = ["LMCA", "LAD", "LAD1", "LAD2", "LAD3", "LAD4",
+                 "LCX", "RCA"]
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +136,8 @@ SUBTREES = {
     "lmca_rca":    ["LMCA", "RCA"],
     "lad_lcx_rca": ["LMCA", "LAD", "LCX", "RCA"],
     "lad12_lcx_rca": ["LMCA", "LAD", "LAD1", "LAD2", "LCX", "RCA"],
+    "lad_full_lcx_rca": ["LMCA", "LAD", "LAD1", "LAD2", "LAD3", "LAD4",
+                         "LCX", "RCA"],
 }
 
 # 'lmca_rca' needs LMCA to be a leaf, which contradicts the table above where
@@ -142,27 +153,43 @@ _LEAF_OVERRIDE = {
 # ---------------------------------------------------------------------------
 # AHA-17 perfusion territories, per configuration.
 # ---------------------------------------------------------------------------
-# Standard coronary distribution (Cerqueira et al. 2002):
-#   LAD  anterior and septal walls plus the apex
-#   LCX  lateral wall
-#   RCA  inferior wall
-# LAD + LCX together are exactly the LMCA territory of the two-trunk case.
+# These follow Wang et al. Fig. 5, which gives the branch-level correspondence
+# for THIS patient's reconstructed anatomy:
+#
+#   LAD1  1, 2, 8      MARG1  6, 12      LCX3  4, 10
+#   LAD4  7            MARG2  5, 11      PDA   3, 9
+#   LAD3  13, 14, 17   MARG3  15, 16
+#
+# The maps below are that table rolled up to whichever branches a given
+# configuration actually terminates in.  Note this is NOT the textbook
+# right-dominant distribution: in this patient the circumflex supplies the
+# inferior wall (LCX3 takes 4 and 10, MARG3 takes 15), leaving the PDA with
+# only the two inferoseptal segments.  Do not "correct" it to the standard
+# Cerqueira assignment -- it is patient-specific anatomy from their CT, and
+# it must match dependencies/aha_segmentation.py, which is authoritative.
 
 PERFUSION_REGIONS = {
     "lmca_rca": {
-        "LMCA": [1, 2, 5, 6, 7, 8, 11, 12, 13, 14, 16, 17],
-        "RCA":  [3, 4, 9, 10, 15],
+        "LMCA": [1, 2, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17],
+        "RCA":  [3, 9],
     },
     "lad_lcx_rca": {
         "LAD":  [1, 2, 7, 8, 13, 14, 17],
-        "LCX":  [5, 6, 11, 12, 16],
-        "RCA":  [3, 4, 9, 10, 15],
+        "LCX":  [4, 5, 6, 10, 11, 12, 15, 16],
+        "RCA":  [3, 9],
     },
     "lad12_lcx_rca": {
-        "LAD1": [1, 2],
-        "LAD2": [7, 8, 13, 14, 17],
-        "LCX":  [5, 6, 11, 12, 16],
-        "RCA":  [3, 4, 9, 10, 15],
+        "LAD1": [1, 2, 8],
+        "LAD2": [7, 13, 14, 17],
+        "LCX":  [4, 5, 6, 10, 11, 12, 15, 16],
+        "RCA":  [3, 9],
+    },
+    "lad_full_lcx_rca": {
+        "LAD1": [1, 2, 8],
+        "LAD3": [13, 14, 17],
+        "LAD4": [7],
+        "LCX":  [4, 5, 6, 10, 11, 12, 15, 16],
+        "RCA":  [3, 9],
     },
 }
 
@@ -211,6 +238,16 @@ TERMINAL_RESISTANCE = {
     "lad12_lcx_rca": {
         "LAD1": 145.60,
         "LAD2":  53.623,
+        "LCX":   56.720,
+        "RCA":   48.410,
+    },
+    # The whole LAD subtree now runs on Wang's published Z: LAD1, LAD3 and
+    # LAD4 are all leaves in Table 1 and all carry one.  Nothing in the LAD
+    # territory is fitted.
+    "lad_full_lcx_rca": {
+        "LAD1": 145.60,
+        "LAD3": 155.00,
+        "LAD4":  80.20,
         "LCX":   56.720,
         "RCA":   48.410,
     },

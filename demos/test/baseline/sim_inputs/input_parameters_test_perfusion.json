@@ -37,7 +37,7 @@
             ]
         }, 
         "no_of_time_steps": [
-            15000
+            2000
         ], 
         "baroreflex": {
             "activations": [
@@ -563,7 +563,8 @@
             "active_stress_DG0",
             "total_stress_vector",
             "Transverse_Angle",
-            "Helical_Angle"
+            "Helical_Angle",
+            "imp_pressure"
             
         ], 
         "mesh_output_path": [
@@ -578,7 +579,7 @@
         "frequency_n": [
             10
         ]
-    }, 
+    },
     "mesh": {
         "solver": {
             "params": {

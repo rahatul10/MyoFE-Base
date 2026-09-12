@@ -169,6 +169,7 @@ class perfusion(object):
         # territory marker, built lazily on the first mesh-sourced call
         self.dx = None
         self.territory_volume = None
+        self._V0 = None
 
         self.data['coronary_P_AO'] = initial_pressure_arteries
         for s in self.tree.terminals:
@@ -267,6 +268,8 @@ class perfusion(object):
             self.territory_volume[term] = vol
 
         total = sum(self.territory_volume.values())
+        print("perfusion: IMP source = '%s', scale = %g"
+              % (self.imp_source, self.imp_scale))
         print("perfusion: territory volumes (reference configuration)")
         for term in self.tree.terminals:
             print("    %-6s %12.6f  %5.1f%%"
@@ -296,31 +299,44 @@ class perfusion(object):
         return dict((s, self.imp_peak_mmHg[s] * shape)
                     for s in self.tree.terminals)
 
-    def return_imp_field(self, mesh_model):
-        """The scalar field to be averaged, in Pa, and the form compiler
-        parameters it has to be assembled with."""
-        from dolfin import tr
+    def return_imp_function(self, mesh_model):
+        """The scalar field to average, as a DG0 Function in Pa.
+
+        For 'stress' the expression -tr(F S F^T)/(3J) contains the whole
+        Guccione exponential PK2 plus the active term, and S carries
+        cb_stress on a Quadrature element.  Integrating that expression
+        directly over each territory asks FFC to compile one enormous form
+        PER TERRITORY, which exhausts memory and kills the job during JIT.
+
+        Instead it is projected ONCE onto DG0 -- a single compile, cached
+        after the first timestep -- and the per-territory integrals are then
+        trivial forms over a simple Function.  DG0 also makes the projection
+        cheap: the mass matrix is diagonal.
+        """
+        from dolfin import project, tr, FunctionSpace
 
         if self.imp_source == 'multiplier':
-            # p itself.  Lives on the CG1 subspace of the mixed element, so
-            # uflacs is fine.
+            # p is CG1 on the mixed element -- no quadrature elements, so it
+            # can be integrated directly with no projection at all.
             return mesh_model['uflforms'].parameters["pressure_variable"], FCP
 
-        # 'stress': minus one third the trace of the Cauchy stress.
-        #   sigma = F S F^T / J,  so  tr(sigma) = tr(F S F^T)/J
-        # S here is the TOTAL PK2 (active + passive + incompressibility),
-        # assembled in mesh.py as Pactive + passive_total_stress.
         F = mesh_model['functions']['Fmat']
         S = mesh_model['functions']['total_stress']
         J = mesh_model['functions']['J']
-        return -tr(F * S * F.T) / (3.0 * J), FCP_QUAD
+        expr = -tr(F * S * F.T) / (3.0 * J)
+
+        if self._V0 is None:
+            self._V0 = FunctionSpace(mesh_model['mesh'], 'DG', 0)
+
+        return project(expr, self._V0,
+                       form_compiler_parameters=FCP_QUAD), FCP
 
     def return_computed_imp(self, mesh_model):
         """Volume-average the chosen field over each coronary territory.
         Returns mmHg keyed by terminal segment."""
         from dolfin import assemble
 
-        field, fcp = self.return_imp_field(mesh_model)
+        field, fcp = self.return_imp_function(mesh_model)
 
         out = {}
         for j, term in enumerate(self.tree.terminals):

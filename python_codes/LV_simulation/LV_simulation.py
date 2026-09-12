@@ -1987,6 +1987,12 @@ class LV_simulation():
 
                                                 self.mesh.model['function_spaces']["scalar"])
                         
+                    if m == 'imp_pressure':
+                        temp_obj = project(
+                            self.mesh.model['uflforms'].parameters["pressure_variable"],
+                            self.mesh.model['function_spaces']["scalar"],
+                            form_compiler_parameters={"representation":"uflacs"})
+
 
                     if m in ['k_1','k_3','k_on','k_act','k_serca','cb_number_density','fiber_strain','Ell','Err','Ecc']:
                             temp_obj = project(self.mesh.model['functions'][m], 

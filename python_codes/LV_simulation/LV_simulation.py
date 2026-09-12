@@ -1119,16 +1119,14 @@ class LV_simulation():
 
         # Advance the coronary tree.  This must stay AFTER solvenonlinear()
         # and after the compartment pressures are recomputed above: it reads
-        # the incompressibility multiplier p and pressure_aorta, and both are
-        # one timestep stale anywhere earlier in this method.
+        # the stress state and pressure_aorta, and both are one timestep
+        # stale anywhere earlier in this method.
         if (self.perf):
             self.perf.implement_time_step(
                 self.circ.data['pressure_aorta'],
                 time_step,
                 self.data['time'],
-                mesh=self.mesh.model['mesh'],
-                p=self.mesh.model['uflforms'].parameters["pressure_variable"])
-
+                mesh_model=self.mesh.model)
         # Then update FE function for cross-bridge stress, hs_length, and passive stress
         # across the mesh
         self.cb_stress_list = project(self.mesh.model['functions']['cb_stress'],

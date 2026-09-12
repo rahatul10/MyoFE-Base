@@ -535,38 +535,8 @@
     }, 
     "output_handler": {
         "mesh_object_to_save": [
-            "displacement", 
-            "active_stress", 
-            "total_stress", 
-            "total_passive", 
-            "myofiber_passive", 
-            "hs_length", 
-            "facetboundaries", 
-            "k_1",  
-            "k_on", 
-            "k_act", 
-            "k_serca", 
-            "local_theta_vis_sheet", 
-            "global_theta_vis_sheet", 
-            "local_theta_vis_fiber", 
-            "global_theta_vis_fiber", 
-            "deviation_sheet", 
-            "stimulus_sheet", 
-            "setpoint_sheet", 
-            "local_theta_vis_sheet_normal", 
-            "global_theta_vis_sheet_normal", 
-            "deviation_sheet_normal", 
-            "stimulus_sheet_normal", 
-            "setpoint_sheet_normal", 
-            "deviation_fiber", 
-            "stimulus_fiber", 
-            "setpoint_fiber",
-            "active_stress_DG0",
-            "total_stress_vector",
-            "Transverse_Angle",
-            "Helical_Angle",
-            "imp_pressure"
-            
+            "displacement",  
+            "total_stress"
         ], 
         "mesh_output_path": [
             "/mnt/gpfs2_4m/scratch/ris237/perfusion_test/sim_output/"

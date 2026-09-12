@@ -91,11 +91,14 @@ PA_TO_MMHG = 0.0075
 # myocardium_vol assembly -- keep them consistent.
 FCP = {"representation": "uflacs"}
 
-# The total stress contains cb_stress, which lives on a Quadrature element.
-# Assembling that with uflacs raises "Quadrature elements must be used with
-# quadrature representation", so the stress source needs its own parameters.
-# quadrature_degree must match the value mesh.py sets globally.
-FCP_QUAD = {"representation": "quadrature", "quadrature_degree": 2}
+# NOTE on representation: total_stress contains cb_stress on a Quadrature
+# element, which looks like it should need quadrature representation.  It
+# does not.  LV_simulation.py already projects
+#     inner(f0, total_stress*f0)
+# with uflacs every time it writes mesh output, and that works.  Quadrature
+# representation expands the Guccione exponentials symbolically at every
+# quadrature point, and FFC takes effectively forever to compile it.  Use
+# uflacs, matching what the rest of the codebase does.
 
 
 # Geometry of the AHA frame.  Measured offline in serial, because under MPI
@@ -302,16 +305,13 @@ class perfusion(object):
     def return_imp_function(self, mesh_model):
         """The scalar field to average, as a DG0 Function in Pa.
 
-        For 'stress' the expression -tr(F S F^T)/(3J) contains the whole
-        Guccione exponential PK2 plus the active term, and S carries
-        cb_stress on a Quadrature element.  Integrating that expression
-        directly over each territory asks FFC to compile one enormous form
-        PER TERRITORY, which exhausts memory and kills the job during JIT.
-
-        Instead it is projected ONCE onto DG0 -- a single compile, cached
+        The expression -tr(F S F^T)/(3J) contains the whole Guccione
+        exponential PK2 plus the active term.  Integrating it directly over
+        each territory would ask FFC to compile one large form PER TERRITORY.
+        It is projected ONCE onto DG0 instead -- a single compile, cached
         after the first timestep -- and the per-territory integrals are then
         trivial forms over a simple Function.  DG0 also makes the projection
-        cheap: the mass matrix is diagonal.
+        cheap, since its mass matrix is diagonal.
         """
         from dolfin import project, tr, FunctionSpace
 
@@ -329,7 +329,7 @@ class perfusion(object):
             self._V0 = FunctionSpace(mesh_model['mesh'], 'DG', 0)
 
         return project(expr, self._V0,
-                       form_compiler_parameters=FCP_QUAD), FCP
+                       form_compiler_parameters=FCP), FCP
 
     def return_computed_imp(self, mesh_model):
         """Volume-average the chosen field over each coronary territory.

@@ -516,7 +516,7 @@
         },
         "perfusion": {
             "subtree": ["lad_full_lcx_rca"],
-            "imp_source": ["stress"],
+            "imp_source": ["multiplier"],
             "imp_scale": [1.0],
             "imp_peak": [{"LAD1": 70.0, "LAD3": 70.0, "LAD4": 70.0, "LCX": 70.0, "RCA": 50.0}]
         }
@@ -536,7 +536,8 @@
     "output_handler": {
         "mesh_object_to_save": [
             "displacement",  
-            "total_stress"
+            "total_stress",
+            "imp_pressure"
         ], 
         "mesh_output_path": [
             "/mnt/gpfs2_4m/scratch/ris237/perfusion_test/sim_output/"

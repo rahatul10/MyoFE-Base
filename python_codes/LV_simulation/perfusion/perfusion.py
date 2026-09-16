@@ -323,7 +323,7 @@ class perfusion(object):
         F = mesh_model['functions']['Fmat']
         S = mesh_model['functions']['total_stress']
         J = mesh_model['functions']['J']
-        expr = -tr(F * S * F.T) / (3.0 * J)
+        expr = tr(F * S * F.T) / (3.0 * J)
 
         if self._V0 is None:
             self._V0 = FunctionSpace(mesh_model['mesh'], 'DG', 0)

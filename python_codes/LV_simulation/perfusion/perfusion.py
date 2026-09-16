@@ -15,9 +15,11 @@ Three sources, chosen in the JSON with "imp_source":
   "multiplier"  the incompressibility Lagrange multiplier p, volume-averaged
                 over each coronary territory.  ("mesh" is accepted as an
                 alias for backward compatibility.)
-  "stress"      minus one third the trace of the Cauchy stress, i.e. the mean
+  "stress"      one third the trace of the Cauchy stress, i.e. the mean
                 normal stress, volume-averaged the same way.  This is Eq. 17
                 of Wang et al.
+  "radial"      minus the radial component of the Cauchy stress -- the part
+                that actually presses on vessels running through the wall.
   "prescribed"  a half-sine over systole with peaks from "imp_peak".  A
                 placeholder, kept so the three can be compared directly.
 
@@ -77,6 +79,8 @@ Python 2.7 compatible.
 """
 
 import numpy as np
+
+from dolfin import assemble
 
 from .coronary_rc import CoronaryRC, SUBTREES
 
@@ -138,14 +142,19 @@ class perfusion(object):
         self.imp_source = self.model.get('imp_source', 'prescribed')
         if self.imp_source == 'mesh':
             self.imp_source = 'multiplier'
-        if self.imp_source not in ('multiplier', 'stress', 'prescribed'):
+        if self.imp_source not in ('multiplier', 'stress', 'radial',
+                                   'prescribed'):
             raise ValueError(
-                "imp_source must be 'multiplier', 'stress' or 'prescribed', "
-                "got '%s'" % self.imp_source)
+                "imp_source must be 'multiplier', 'stress', 'radial' or "
+                "'prescribed', got '%s'" % self.imp_source)
 
         # Scale applied to whichever mesh field is chosen.  1.0 is the honest
         # value; anything else is a modelling choice that must be reported.
         self.imp_scale = float(self.model.get('imp_scale', 1.0))
+
+        # Write BOTH candidate IMP fields to data.csv for comparison.  Only
+        # imp_source drives the tree.  Costs an extra projection per step.
+        self.imp_diagnostic = bool(self.model.get('imp_diagnostic', False))
 
         self.aha_params = dict(DEFAULT_AHA)
         self.aha_params.update(self.model.get('aha', {}))
@@ -178,6 +187,11 @@ class perfusion(object):
         for s in self.tree.terminals:
             self.data['coronary_flow_' + s] = 0.0
             self.data['coronary_imp_' + s] = 0.0
+        if self.imp_diagnostic:
+            for s in self.tree.terminals:
+                self.data['imp_multiplier_' + s] = 0.0
+                self.data['imp_stress_' + s] = 0.0
+                self.data['imp_radial_' + s] = 0.0
 
     # -----------------------------------------------------------------
     # setup
@@ -302,7 +316,31 @@ class perfusion(object):
         return dict((s, self.imp_peak_mmHg[s] * shape)
                     for s in self.tree.terminals)
 
-    def return_imp_function(self, mesh_model):
+    def return_imp_all(self, mesh_model):
+        """Territory averages of BOTH candidate IMP fields, in mmHg.
+
+        Returns {'multiplier': {...}, 'stress': {...}}.  Only the field named
+        by imp_source is used to drive the coronary tree; the other is
+        computed for comparison and written to data.csv only.  Computing both
+        from the SAME mechanics state is the point -- it removes any question
+        of comparing across runs at different loading.
+
+        Costs one extra DG0 projection per timestep, so turn the diagnostic
+        off (imp_diagnostic = false) for production runs.
+        """
+        out = {}
+        for src in ('multiplier', 'stress', 'radial'):
+            field, fcp = self.return_imp_function(mesh_model, source=src)
+            d = {}
+            for j, term in enumerate(self.tree.terminals):
+                integral = assemble(field * self.dx(j + 1),
+                                    form_compiler_parameters=fcp)
+                d[term] = (PA_TO_MMHG * integral
+                           / self.territory_volume[term])
+            out[src] = d
+        return out
+
+    def return_imp_function(self, mesh_model, source=None):
         """The scalar field to average, as a DG0 Function in Pa.
 
         The expression -tr(F S F^T)/(3J) contains the whole Guccione
@@ -313,9 +351,12 @@ class perfusion(object):
         trivial forms over a simple Function.  DG0 also makes the projection
         cheap, since its mass matrix is diagonal.
         """
-        from dolfin import project, tr, FunctionSpace
+        from dolfin import project, tr, sqrt, inner, FunctionSpace
 
-        if self.imp_source == 'multiplier':
+        if source is None:
+            source = self.imp_source
+
+        if source == 'multiplier':
             # p is CG1 on the mixed element -- no quadrature elements, so it
             # can be integrated directly with no projection at all.
             return mesh_model['uflforms'].parameters["pressure_variable"], FCP
@@ -323,7 +364,31 @@ class perfusion(object):
         F = mesh_model['functions']['Fmat']
         S = mesh_model['functions']['total_stress']
         J = mesh_model['functions']['J']
-        expr = tr(F * S * F.T) / (3.0 * J)
+
+        if source == 'stress':
+            # Eq. 17: the hydrostatic part of the Cauchy stress.
+            #   tr(sigma) = tr(F S F^T)/J,  and  P F^T = F S F^T
+            # No minus sign -- that is how the paper writes it, and the
+            # negated version gives IMP that is NEGATIVE during systole.
+            expr = tr(F * S * F.T) / (3.0 * J)
+        else:
+            # 'radial': minus the radial component of the Cauchy stress.
+            #
+            # A vessel running through the wall is squeezed by the stress
+            # acting ACROSS it, not by an average over three directions --
+            # and averaging lets the tensile hoop and longitudinal stress
+            # cancel the compressive radial one.  Equilibrium pins this
+            # component: sigma_rr = -P_cavity at the endocardium and 0 at
+            # the epicardium, so -sigma_rr inherits cavity pressure's shape
+            # as well as its scale, rather than being a narrow spike.
+            #
+            # err is the referential radial unit vector, read from the mesh
+            # (ellipsoidal/eR); push it forward and renormalise.
+            err = mesh_model['functions']['err']
+            v = F * err
+            e_r = v / sqrt(inner(v, v))
+            sigma = (1.0 / J) * F * S * F.T
+            expr = -inner(e_r, sigma * e_r)
 
         if self._V0 is None:
             self._V0 = FunctionSpace(mesh_model['mesh'], 'DG', 0)
@@ -379,7 +444,16 @@ class perfusion(object):
                     "without mesh_model" % self.imp_source)
             if self.dx is None:
                 self.build_territory_marker(mesh_model)
-            P_IMP = self.return_computed_imp(mesh_model)
+            if self.imp_diagnostic:
+                both = self.return_imp_all(mesh_model)
+                for s in self.tree.terminals:
+                    self.data['imp_multiplier_' + s] = both['multiplier'][s]
+                    self.data['imp_stress_' + s] = both['stress'][s]
+                    self.data['imp_radial_' + s] = both['radial'][s]
+                P_IMP = dict((s, self.imp_scale * both[self.imp_source][s])
+                             for s in self.tree.terminals)
+            else:
+                P_IMP = self.return_computed_imp(mesh_model)
 
         self.P = self.tree.step(self.P, pressure_arteries, P_IMP)
 

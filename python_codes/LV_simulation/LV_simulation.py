@@ -356,9 +356,12 @@ class LV_simulation():
 
         """ If required, create the coronary perfusion model """
         if ('perfusion' in instruction_data['model']):
+            # p[0] is the aorta compartment.  The coronary ostia sit in the
+            # aortic root, upstream of the systemic arterial resistance, so
+            # the inlet is aortic and not arterial pressure.
             self.perf = perf.perfusion(instruction_data['model']['perfusion'],
                                        self,
-                                       self.circ.data['pressure_arteries'])
+                                       self.circ.data['p'][0])
         else:
             self.perf = []
         # If required, create the growth object
@@ -1119,11 +1122,15 @@ class LV_simulation():
 
         # Advance the coronary tree.  This must stay AFTER solvenonlinear()
         # and after the compartment pressures are recomputed above: it reads
-        # the stress state and pressure_aorta, and both are one timestep
+        # the stress state and the aortic pressure, and both are one timestep
         # stale anywhere earlier in this method.
+        #
+        # Use p[0], not pressure_aorta: p[] is recomputed in the loop just
+        # above, whereas pressure_aorta is only refreshed by updata_data()
+        # much later in the timestep, so it lags by one step (~2 mmHg).
         if (self.perf):
             self.perf.implement_time_step(
-                self.circ.data['pressure_aorta'],
+                self.circ.data['p'][0],
                 time_step,
                 self.data['time'],
                 mesh_model=self.mesh.model)

@@ -115,15 +115,48 @@ SEGMENTS = {
 
     "LCX":  dict(name="Left circumflex artery",
                  R=0.3390, L=0.0230, C=0.0001,
-                 node_p="N_LMCA", node_d="T_LCX"),
+                 node_p="N_LMCA", node_d="N_LCX"),
+
+    "MARG1": dict(name="First obtuse marginal branch",
+                  R=1.6994, L=0.0666, C=0.0001, Z=155.00,
+                  node_p="N_LCX",  node_d="T_MARG1"),
+
+    "LCX1": dict(name="Circumflex continuation, first segment",
+                 R=0.4215, L=0.0224, C=0.0001,
+                 node_p="N_LCX",  node_d="N_LCX1"),
+
+    "MARG2": dict(name="Second obtuse marginal branch",
+                  R=2.5890, L=0.0761, C=0.0001, Z=168.40,
+                  node_p="N_LCX1", node_d="T_MARG2"),
+
+    "LCX2": dict(name="Circumflex continuation, second segment",
+                 R=0.8890, L=0.0364, C=0.0001,
+                 node_p="N_LCX1", node_d="N_LCX2"),
+
+    "MARG3": dict(name="Third obtuse marginal branch",
+                  R=2.7165, L=0.0866, C=0.0001, Z=72.00,
+                  node_p="N_LCX2", node_d="T_MARG3"),
+
+    "LCX3": dict(name="Distal circumflex",
+                 R=2.9208, L=0.0922, C=0.0001, Z=170.10,
+                 node_p="N_LCX2", node_d="T_LCX3"),
 
     "RCA":  dict(name="Right coronary artery",
                  R=1.6671, L=0.1164, C=0.0006,
-                 node_p="AO",     node_d="T_RCA"),
+                 node_p="AO",     node_d="N_RCA"),
+
+    "PLA":  dict(name="Posterolateral artery (right ventricle)",
+                 R=1.2531, L=0.0627, C=0.0002, Z=59.81,
+                 node_p="N_RCA",  node_d="T_PLA"),
+
+    "PDA":  dict(name="Posterior descending artery",
+                 R=2.1974, L=0.0779, C=0.0001, Z=139.72,
+                 node_p="N_RCA",  node_d="T_PDA"),
 }
 
 SEGMENT_ORDER = ["LMCA", "LAD", "LAD1", "LAD2", "LAD3", "LAD4",
-                 "LCX", "RCA"]
+                 "LCX", "MARG1", "LCX1", "MARG2", "LCX2", "MARG3", "LCX3",
+                 "RCA", "PLA", "PDA"]
 
 
 # ---------------------------------------------------------------------------
@@ -138,15 +171,18 @@ SUBTREES = {
     "lad12_lcx_rca": ["LMCA", "LAD", "LAD1", "LAD2", "LCX", "RCA"],
     "lad_full_lcx_rca": ["LMCA", "LAD", "LAD1", "LAD2", "LAD3", "LAD4",
                          "LCX", "RCA"],
+    "full": SEGMENT_ORDER,
 }
 
 # 'lmca_rca' needs LMCA to be a leaf, which contradicts the table above where
 # it feeds N_LMCA.  Rather than carry two tables, that configuration rewires
 # LMCA's distal node when it is selected; see _resolve_segments.
 _LEAF_OVERRIDE = {
-    "lmca_rca":     {"LMCA": "T_LMCA"},
-    "lad_lcx_rca":  {"LAD": "T_LAD"},
-    "lad12_lcx_rca": {"LAD2": "T_LAD2"},
+    "lmca_rca":       {"LMCA": "T_LMCA", "LCX": "T_LCX", "RCA": "T_RCA"},
+    "lad_lcx_rca":    {"LAD": "T_LAD", "LCX": "T_LCX", "RCA": "T_RCA"},
+    "lad12_lcx_rca":  {"LAD2": "T_LAD2", "LCX": "T_LCX", "RCA": "T_RCA"},
+    "lad_full_lcx_rca": {"LCX": "T_LCX", "RCA": "T_RCA"},
+    # "full" needs no override -- every segment sits where Table 1 puts it.
 }
 
 
@@ -191,6 +227,38 @@ PERFUSION_REGIONS = {
         "LCX":  [4, 5, 6, 10, 11, 12, 15, 16],
         "RCA":  [3, 9],
     },
+    # The full tree is Wang Fig. 5 verbatim.  PLA has NO AHA segments: it
+    # supplies right ventricle, which this LV-only mesh does not contain.
+    # See EXTRA_LV_TERMINALS below for how its IMP is handled.
+    "full": {
+        "LAD1":  [1, 2, 8],
+        "LAD4":  [7],
+        "LAD3":  [13, 14, 17],
+        "MARG1": [6, 12],
+        "MARG2": [5, 11],
+        "MARG3": [15, 16],
+        "LCX3":  [4, 10],
+        "PDA":   [3, 9],
+        "PLA":   [],
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Terminals that perfuse tissue outside the LV mesh
+# ---------------------------------------------------------------------------
+# PLA supplies the right ventricle.  There is no RV in this mesh, so its IMP
+# cannot be averaged from any territory.  Wang et al. take IMP in the PLA
+# region as roughly one third of the LV wall value, as a surrogate for RV
+# intramyocardial pressure; that fraction is applied to the volume-weighted
+# mean IMP over all LV territories.
+#
+# These terminals still carry flow and still load the tree -- PLA takes about
+# 80 mL/min, which is a real part of the coronary circulation.  They are just
+# excluded from the AHA 1..17 partition check, since they own no LV segments.
+
+EXTRA_LV_TERMINALS = {
+    "full": {"PLA": 1.0 / 3.0},
 }
 
 
@@ -250,6 +318,19 @@ TERMINAL_RESISTANCE = {
         "LAD4":  80.20,
         "LCX":   56.720,
         "RCA":   48.410,
+    },
+    # The full tree needs NO calibration at all: every terminal is a leaf in
+    # Table 1 and carries its own published Z.  Nothing here is fitted.
+    "full": {
+        "LAD1":  145.60,
+        "LAD3":  155.00,
+        "LAD4":   80.20,
+        "MARG1": 155.00,
+        "MARG2": 168.40,
+        "MARG3":  72.00,
+        "LCX3":  170.10,
+        "PLA":    59.81,
+        "PDA":   139.72,
     },
 }
 
@@ -347,6 +428,12 @@ def check_tables(verbose=False):
             errors.append("%s: no perfusion territory map" % sub)
         else:
             reg = PERFUSION_REGIONS[sub]
+            extra = EXTRA_LV_TERMINALS.get(sub, {})
+            for t in extra:
+                if reg.get(t):
+                    errors.append("%s: %s is listed as an extra-LV terminal "
+                                  "but has AHA segments %s"
+                                  % (sub, t, reg[t]))
             if sorted(reg.keys()) != sorted(terms):
                 errors.append("%s: territory map covers %s but terminals are %s"
                               % (sub, sorted(reg.keys()), sorted(terms)))

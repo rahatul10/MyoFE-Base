@@ -82,7 +82,7 @@ import numpy as np
 
 from dolfin import assemble
 
-from .coronary_rc import CoronaryRC, SUBTREES
+from .coronary_rc import CoronaryRC, SUBTREES, EXTRA_LV_TERMINALS
 
 
 # The mechanics work in Pa.  Same factor circulation.py uses on the cavity
@@ -251,6 +251,15 @@ class perfusion(object):
                   "lambda in [0,1]. Check apex_point and axis_length."
                   % (n_clamped, n_cells))
 
+        # Terminals that perfuse tissue outside this mesh (PLA -> right
+        # ventricle).  They own no AHA segments, get no marker tag, and their
+        # IMP is taken as a fraction of the LV mean -- see return_computed_imp.
+        self.extra_lv = dict(EXTRA_LV_TERMINALS.get(self.subtree, {}))
+        for t in self.extra_lv:
+            if t not in self.tree.terminals:
+                raise RuntimeError("extra-LV terminal '%s' is not a terminal "
+                                   "of subtree '%s'" % (t, self.subtree))
+
         # AHA segment -> terminal tag, via this configuration's territory map
         seg_to_tag = {}
         for j, term in enumerate(self.tree.terminals):
@@ -275,6 +284,8 @@ class perfusion(object):
         # per timestep.
         self.territory_volume = {}
         for j, term in enumerate(self.tree.terminals):
+            if term in self.extra_lv:
+                continue          # no LV tissue, so no volume to assemble
             vol = assemble(Constant(1.0) * self.dx(j + 1),
                            form_compiler_parameters=FCP)
             if vol <= 0.0:
@@ -289,9 +300,13 @@ class perfusion(object):
               % (self.imp_source, self.imp_scale))
         print("perfusion: territory volumes (reference configuration)")
         for term in self.tree.terminals:
-            print("    %-6s %12.6f  %5.1f%%"
-                  % (term, self.territory_volume[term],
-                     100.0 * self.territory_volume[term] / total))
+            if term in self.extra_lv:
+                print("    %-6s %12s  outside the LV mesh, IMP = %.3f x LV mean"
+                      % (term, "-", self.extra_lv[term]))
+            else:
+                print("    %-6s %12.6f  %5.1f%%"
+                      % (term, self.territory_volume[term],
+                         100.0 * self.territory_volume[term] / total))
 
     # -----------------------------------------------------------------
     # intramyocardial pressure
@@ -332,11 +347,19 @@ class perfusion(object):
         for src in ('multiplier', 'stress', 'radial'):
             field, fcp = self.return_imp_function(mesh_model, source=src)
             d = {}
+            num = 0.0
+            den = 0.0
             for j, term in enumerate(self.tree.terminals):
+                if term in self.extra_lv:
+                    continue
                 integral = assemble(field * self.dx(j + 1),
                                     form_compiler_parameters=fcp)
-                d[term] = (PA_TO_MMHG * integral
-                           / self.territory_volume[term])
+                d[term] = PA_TO_MMHG * integral / self.territory_volume[term]
+                num += integral
+                den += self.territory_volume[term]
+            lv_mean = PA_TO_MMHG * num / den
+            for term, frac in self.extra_lv.items():
+                d[term] = frac * lv_mean
             out[src] = d
         return out
 
@@ -404,11 +427,23 @@ class perfusion(object):
         field, fcp = self.return_imp_function(mesh_model)
 
         out = {}
+        num = 0.0
+        den = 0.0
         for j, term in enumerate(self.tree.terminals):
+            if term in self.extra_lv:
+                continue
             integral = assemble(field * self.dx(j + 1),
                                 form_compiler_parameters=fcp)
             out[term] = (self.imp_scale * PA_TO_MMHG * integral
                          / self.territory_volume[term])
+            num += integral
+            den += self.territory_volume[term]
+
+        # Terminals outside the LV mesh take a fraction of the volume-weighted
+        # LV mean, following Wang et al.'s treatment of the PLA region.
+        lv_mean = self.imp_scale * PA_TO_MMHG * num / den
+        for term, frac in self.extra_lv.items():
+            out[term] = frac * lv_mean
         return out
 
     # -----------------------------------------------------------------

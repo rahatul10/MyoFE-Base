@@ -194,6 +194,14 @@ class perfusion(object):
         for s in self.tree.terminals:
             self.data['coronary_flow_' + s] = 0.0
             self.data['coronary_imp_' + s] = 0.0
+        # Every segment's flow, conduits included.  A conduit carries the sum
+        # of its children and has no perfusion territory, so it gets a
+        # coronary_seg_* column but no IMP.  Node pressures too: these are
+        # what the FFR calculation needs for the stenosis work.
+        for s in self.tree.names:
+            self.data['coronary_seg_' + s] = 0.0
+        for n in self.tree.free_nodes:
+            self.data['coronary_P_' + n] = 0.0
         if self.imp_diagnostic:
             for s in self.tree.terminals:
                 self.data['imp_multiplier_' + s] = 0.0
@@ -507,5 +515,11 @@ class perfusion(object):
         for s in self.tree.terminals:
             self.data['coronary_flow_' + s] = q[s]
             self.data['coronary_imp_' + s] = P_IMP[s]
+
+        seg = self.tree.flows(self.P, pressure_arteries, P_IMP)
+        for s in self.tree.names:
+            self.data['coronary_seg_' + s] = seg[s]
+        for n in self.tree.free_nodes:
+            self.data['coronary_P_' + n] = self.P[self.tree.idx[n]]
 
         return q

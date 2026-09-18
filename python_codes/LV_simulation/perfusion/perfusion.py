@@ -156,6 +156,12 @@ class perfusion(object):
         # imp_source drives the tree.  Costs an extra projection per step.
         self.imp_diagnostic = bool(self.model.get('imp_diagnostic', False))
 
+        # Solve the full R-L-C system of Wang Eq. 3 rather than the R-C
+        # reduction.  Segment flows become states alongside node pressures,
+        # so the system doubles in size.  See coronary_rc.py for why the
+        # difference is expected to be small.
+        self.inertance = bool(self.model.get('inertance', False))
+
         self.aha_params = dict(DEFAULT_AHA)
         self.aha_params.update(self.model.get('aha', {}))
 
@@ -166,7 +172,8 @@ class perfusion(object):
         # the first timestep.
         self.time_step = None
         self.tree = CoronaryRC(subtree, 1.0,
-                               terminal_resistance=self.terminal_resistance)
+                               terminal_resistance=self.terminal_resistance,
+                               inertance=self.inertance)
 
         self.imp_peak_mmHg = self.model.get('imp_peak', {})
         for s in self.tree.terminals:
@@ -203,7 +210,8 @@ class perfusion(object):
         dt, does not exist at construction."""
         self.time_step = time_step
         self.tree = CoronaryRC(self.subtree, time_step,
-                               terminal_resistance=self.terminal_resistance)
+                               terminal_resistance=self.terminal_resistance,
+                               inertance=self.inertance)
         self.P = self.tree.steady_state(self.initial_pressure_arteries,
                                         self.return_prescribed_imp(0.0))
 
@@ -296,8 +304,9 @@ class perfusion(object):
             self.territory_volume[term] = vol
 
         total = sum(self.territory_volume.values())
-        print("perfusion: IMP source = '%s', scale = %g"
-              % (self.imp_source, self.imp_scale))
+        print("perfusion: IMP source = '%s', scale = %g, %s"
+              % (self.imp_source, self.imp_scale,
+                 "R-L-C (Eq. 3)" if self.inertance else "R-C"))
         print("perfusion: territory volumes (reference configuration)")
         for term in self.tree.terminals:
             if term in self.extra_lv:

@@ -44,9 +44,23 @@ set to reproduce measured resting flows and are NOT Table 1's Z.
 
 INDUCTANCE
 ----------
-L is carried in the table but not used, matching MyoFE's circulation model.
-Over a periodic cycle the integral of L dQ/dt is exactly zero, so dropping L
-leaves the cycle-mean flow unchanged and affects only waveform shape.
+Set inertance=True (JSON: "inertance") to solve the full R-L-C system of
+Wang et al. Eq. 3 rather than the R-C reduction.
+
+With L the segment flows become states alongside the node pressures:
+
+    L_s dQ_s/dt + R_s Q_s = P_p - P_d          one per segment
+    C_n dP_n/dt = sum(Q_in) - sum(Q_out)       one per free node
+
+Backward Euler on both gives a single constant linear system in [P; Q],
+factorized once.  Setting every L to zero reproduces the R-C solver exactly.
+
+Expect little difference.  Over a periodic cycle the integral of L dQ/dt is
+exactly zero, so the cycle mean cannot change; and the waveform barely moves
+either, because the terminal resistances (72-170) dwarf the epicardial ones
+(0.2-3.6).  At typical flow the whole epicardial path drops under 1 mmHg
+against about 29 mmHg across the terminal resistance, so inertance acts on a
+part of the circuit that carries almost none of the pressure.
 
 UNITS
 -----
@@ -480,13 +494,15 @@ class CoronaryRC(object):
     outlets are pinned; interior junctions and terminal nodes are solved.
     """
 
-    def __init__(self, subtree, dt, terminal_resistance=None):
+    def __init__(self, subtree, dt, terminal_resistance=None,
+                 inertance=False):
         """subtree is a key of SUBTREES.  terminal_resistance may be None (no
         downstream resistance), a single number applied to every territory, or
         a dict keyed by terminal segment name; omitted, the calibrated table
         for this configuration is used."""
 
         self.subtree = subtree
+        self.inertance = bool(inertance)
         self.segments = _resolve_segments(subtree)
         self.names = list(SUBTREES[subtree])
         self.dt = dt
@@ -530,7 +546,16 @@ class CoronaryRC(object):
         # IMP now sits beyond it, so the terminal node becomes an unknown
         self.free_nodes = sorted(n for n in nodes if n != INLET_NODE)
         self.idx = dict((n, i) for i, n in enumerate(self.free_nodes))
-        self.n = len(self.free_nodes)
+        self.n_p = len(self.free_nodes)
+
+        if self.inertance:
+            # segment flows are states too, appended after the pressures
+            self.qidx = dict((s, self.n_p + i)
+                             for i, s in enumerate(self.names))
+            self.n = self.n_p + len(self.names)
+        else:
+            self.qidx = {}
+            self.n = self.n_p
 
         self.C = dict((n, 0.0) for n in nodes)
         for s in self.names:
@@ -544,6 +569,8 @@ class CoronaryRC(object):
         return P_IMP[self.terminal_segment[node]]
 
     def _assemble(self):
+        if self.inertance:
+            return self._assemble_rlc()
         A = np.zeros((self.n, self.n))
         for node in self.free_nodes:
             i = self.idx[node]
@@ -563,7 +590,46 @@ class CoronaryRC(object):
         if _HAVE_SCIPY and self.n > 0:
             self._lu = lu_factor(A)
 
+    def _assemble_rlc(self):
+        """Pressures and flows together.  Rows 0..n_p-1 are node mass balance,
+        rows n_p.. are the segment momentum equations."""
+        A = np.zeros((self.n, self.n))
+        for node in self.free_nodes:
+            i = self.idx[node]
+            A[i, i] += self.C[node] / self.dt
+        for nd in self.terminal_nodes:
+            s = self.terminal_segment[nd]
+            A[self.idx[nd], self.idx[nd]] += 1.0 / self.Rt[s]
+        for s in self.names:
+            j = self.qidx[s]
+            a, d = self.segments[s]["node_p"], self.segments[s]["node_d"]
+            if a in self.idx:
+                A[self.idx[a], j] += 1.0        # leaves the proximal node
+                A[j, self.idx[a]] -= 1.0
+            if d in self.idx:
+                A[self.idx[d], j] -= 1.0        # enters the distal node
+                A[j, self.idx[d]] += 1.0
+            A[j, j] += self.segments[s]["L"] / self.dt + self.segments[s]["R"]
+        self.A = A
+        if _HAVE_SCIPY and self.n > 0:
+            self._lu = lu_factor(A)
+
+    def _bc_load_rlc(self, P_AO, P_IMP):
+        b = np.zeros(self.n)
+        for nd in self.terminal_nodes:
+            s = self.terminal_segment[nd]
+            b[self.idx[nd]] += P_IMP[s] / self.Rt[s]
+        for s in self.names:
+            j = self.qidx[s]
+            if self.segments[s]["node_p"] == INLET_NODE:
+                b[j] += P_AO
+            if self.segments[s]["node_d"] == INLET_NODE:
+                b[j] -= P_AO
+        return b
+
     def _bc_load(self, P_AO, P_IMP):
+        if self.inertance:
+            return self._bc_load_rlc(P_AO, P_IMP)
         b = np.zeros(self.n)
         for s in self.names:
             a, d = self.segments[s]["node_p"], self.segments[s]["node_d"]
@@ -583,6 +649,10 @@ class CoronaryRC(object):
         for node in self.free_nodes:
             i = self.idx[node]
             b[i] += self.C[node] / self.dt * P_prev[i]
+        if self.inertance:
+            for s in self.names:
+                j = self.qidx[s]
+                b[j] += self.segments[s]["L"] / self.dt * P_prev[j]
         if _HAVE_SCIPY:
             return lu_solve(self._lu, b)
         return np.linalg.solve(self.A, b)
@@ -594,6 +664,10 @@ class CoronaryRC(object):
         for node in self.free_nodes:
             i = self.idx[node]
             A[i, i] -= self.C[node] / self.dt
+        if self.inertance:
+            for s in self.names:
+                j = self.qidx[s]
+                A[j, j] -= self.segments[s]["L"] / self.dt
         return np.linalg.solve(A, self._bc_load(P_AO, P_IMP))
 
     def pressure(self, P, node, P_AO, P_IMP):
@@ -604,6 +678,8 @@ class CoronaryRC(object):
     def flows(self, P, P_AO, P_IMP):
         """Flow through each epicardial segment, positive proximal to distal.
         For a conduit such as LMCA this is the sum of its children."""
+        if self.inertance:
+            return dict((s, P[self.qidx[s]]) for s in self.names)
         q = {}
         for s in self.names:
             pa = self.pressure(P, self.segments[s]["node_p"], P_AO, P_IMP)

@@ -82,7 +82,17 @@ import numpy as np
 
 from dolfin import assemble
 
-from .coronary_rc import CoronaryRC, SUBTREES, EXTRA_LV_TERMINALS
+from .coronary_rc import (CoronaryRC, SUBTREES, EXTRA_LV_TERMINALS,
+                          TERMINAL_RESISTANCE_PHYSIO)
+
+# The AHA segmentation, its geometry, and the segment -> territory map all come
+# from dependencies/aha_segmentation.py.  Nothing regional is defined in this
+# file, so the territories used for perfusion are exactly the ones validated
+# in ParaView (aha_points.csv).
+try:
+    from ..dependencies import aha_segmentation as aha
+except (ImportError, ValueError):
+    import aha_segmentation as aha
 
 
 # The mechanics work in Pa.  Same factor circulation.py uses on the cavity
@@ -105,19 +115,6 @@ FCP = {"representation": "uflacs"}
 # uflacs, matching what the rest of the codebase does.
 
 
-# Geometry of the AHA frame.  Measured offline in serial, because under MPI
-# no rank sees both the apex and the base.  Overridable from JSON; these
-# defaults are the values recorded in dependencies/aha_segmentation.py for
-# the baseline mesh.  If the mesh changes, these must be re-measured.
-DEFAULT_AHA = {
-    "apex_point":  [0.0, 0.0, -0.7315],
-    "axis_vector": [0.0, 0.0, 1.0],
-    "axis_length": 0.7315,
-    "c_ref":       [1.0, 0.0, 0.0],
-    "lambda_c":    0.0902,
-    "lambda_A":    0.3935,
-    "lambda_M":    0.6967,
-}
 
 
 class perfusion(object):
@@ -133,13 +130,38 @@ class perfusion(object):
 
         self.terminal_resistance = self.model.get('terminal_resistance', None)
 
-        subtree = self.model.get('subtree', 'lad_lcx_rca')
+        # ------------------------------------------------------------------
+        # DEFAULTS = the production configuration.  An empty JSON block,
+        #     "perfusion": {}
+        # runs the full 16-segment R-L-C tree, Cauchy-stress IMP (Eq. 17), and
+        # every LV territory at 1.0 mL/min/g.  The options below exist only
+        # for testing; none needs to appear in the JSON.
+        # ------------------------------------------------------------------
+
+        # Terminal resistances.
+        #   "physiological"  (default) every LV territory at 1.0 mL/min/g,
+        #                    the healthy resting PET value (Lassen et al.
+        #                    2026); see TERMINAL_RESISTANCE_PHYSIO
+        #   "published"      Wang Table 1 Z as printed, ~2x physiological --
+        #                    only for comparing against the paper
+        self.rt_set = self.model.get('rt_set', 'physiological')
+
+        subtree = self.model.get('subtree', 'full')
         if subtree not in SUBTREES:
             raise ValueError("unknown coronary subtree '%s'; options are %s"
                              % (subtree, sorted(SUBTREES.keys())))
         self.subtree = subtree
 
-        self.imp_source = self.model.get('imp_source', 'prescribed')
+        if self.rt_set not in ('published', 'physiological'):
+            raise ValueError("rt_set must be 'published' or 'physiological', "
+                             "got '%s'" % self.rt_set)
+        if self.terminal_resistance is None and self.rt_set == 'physiological':
+            if subtree not in TERMINAL_RESISTANCE_PHYSIO:
+                raise ValueError("no physiological terminal resistances for "
+                                 "subtree '%s'" % subtree)
+            self.terminal_resistance = TERMINAL_RESISTANCE_PHYSIO[subtree]
+
+        self.imp_source = self.model.get('imp_source', 'stress')
         if self.imp_source == 'mesh':
             self.imp_source = 'multiplier'
         if self.imp_source not in ('multiplier', 'stress', 'radial',
@@ -160,10 +182,12 @@ class perfusion(object):
         # reduction.  Segment flows become states alongside node pressures,
         # so the system doubles in size.  See coronary_rc.py for why the
         # difference is expected to be small.
-        self.inertance = bool(self.model.get('inertance', False))
+        self.inertance = bool(self.model.get('inertance', True))
 
-        self.aha_params = dict(DEFAULT_AHA)
-        self.aha_params.update(self.model.get('aha', {}))
+        # Geometry comes only from aha_segmentation.py -- no JSON override, so
+        # perfusion can never segment the mesh differently from what was
+        # validated.
+        self.aha_params = dict(aha.AHA_GEOMETRY)
 
         # The protocol, and therefore the timestep, does not exist when
         # LV_simulation.__init__ runs.  A throwaway tree is built here only so
@@ -241,11 +265,6 @@ class perfusion(object):
 
         mesh = mesh_model['mesh']
 
-        try:
-            from ..dependencies import aha_segmentation as aha
-        except ImportError:
-            import aha_segmentation as aha
-
         n_cells = mesh.num_cells()
 
         centroids = np.zeros((n_cells, 3))
@@ -276,11 +295,37 @@ class perfusion(object):
                 raise RuntimeError("extra-LV terminal '%s' is not a terminal "
                                    "of subtree '%s'" % (t, self.subtree))
 
-        # AHA segment -> terminal tag, via this configuration's territory map
+        # AHA segment -> terminal tag.
+        #
+        # For the full tree the map is aha_segmentation.PERFUSION_REGIONS --
+        # the one validated in ParaView -- not a copy.  Its region names must
+        # be exactly the tree's LV terminals, or the run stops here.
+        # The reduced trees are roll-ups used only during development and keep
+        # coronary_rc's map.
+        #
+        # The integer tag of each territory is aha_segmentation.REGION_NAME_TO_ID
+        # itself -- not derived from the order of the coronary tree -- so the
+        # marker here carries exactly the same region ids as region_of() and the
+        # ParaView region field, by construction rather than by coincidence.
+        if self.subtree == 'full':
+            regions = aha.PERFUSION_REGIONS
+            lv_terms = [t for t in self.tree.terminals if t not in self.extra_lv]
+            if sorted(regions) != sorted(lv_terms):
+                raise RuntimeError(
+                    "aha_segmentation.PERFUSION_REGIONS %s does not match the "
+                    "LV terminals of the coronary tree %s"
+                    % (sorted(regions), sorted(lv_terms)))
+            tag_of = dict(aha.REGION_NAME_TO_ID)
+        else:
+            regions = self.tree.regions
+            tag_of = dict((t, j + 1)
+                          for j, t in enumerate(self.tree.terminals))
+        self.tag_of = tag_of
+
         seg_to_tag = {}
-        for j, term in enumerate(self.tree.terminals):
-            for s in self.tree.regions[term]:
-                seg_to_tag[s] = j + 1
+        for term in self.tree.terminals:
+            for s in regions.get(term, []):
+                seg_to_tag[s] = tag_of[term]
 
         missing = [s for s in range(1, 18) if s not in seg_to_tag]
         if missing:
@@ -299,22 +344,22 @@ class perfusion(object):
         # they are assembled once here and only the numerator is assembled
         # per timestep.
         self.territory_volume = {}
-        for j, term in enumerate(self.tree.terminals):
+        for term in self.tree.terminals:
             if term in self.extra_lv:
                 continue          # no LV tissue, so no volume to assemble
-            vol = assemble(Constant(1.0) * self.dx(j + 1),
+            vol = assemble(Constant(1.0) * self.dx(self.tag_of[term]),
                            form_compiler_parameters=FCP)
             if vol <= 0.0:
                 raise RuntimeError(
                     "territory '%s' (AHA %s) has zero volume: no cell centroid "
                     "landed in it. Check the AHA frame parameters."
-                    % (term, self.tree.regions[term]))
+                    % (term, regions.get(term, [])))
             self.territory_volume[term] = vol
 
         total = sum(self.territory_volume.values())
-        print("perfusion: IMP source = '%s', scale = %g, %s"
+        print("perfusion: IMP source = '%s', scale = %g, %s, Rt set '%s'"
               % (self.imp_source, self.imp_scale,
-                 "R-L-C (Eq. 3)" if self.inertance else "R-C"))
+                 "R-L-C (Eq. 3)" if self.inertance else "R-C", self.rt_set))
         print("perfusion: territory volumes (reference configuration)")
         for term in self.tree.terminals:
             if term in self.extra_lv:
@@ -366,10 +411,10 @@ class perfusion(object):
             d = {}
             num = 0.0
             den = 0.0
-            for j, term in enumerate(self.tree.terminals):
+            for term in self.tree.terminals:
                 if term in self.extra_lv:
                     continue
-                integral = assemble(field * self.dx(j + 1),
+                integral = assemble(field * self.dx(self.tag_of[term]),
                                     form_compiler_parameters=fcp)
                 d[term] = PA_TO_MMHG * integral / self.territory_volume[term]
                 num += integral
@@ -446,10 +491,10 @@ class perfusion(object):
         out = {}
         num = 0.0
         den = 0.0
-        for j, term in enumerate(self.tree.terminals):
+        for term in self.tree.terminals:
             if term in self.extra_lv:
                 continue
-            integral = assemble(field * self.dx(j + 1),
+            integral = assemble(field * self.dx(self.tag_of[term]),
                                 form_compiler_parameters=fcp)
             out[term] = (self.imp_scale * PA_TO_MMHG * integral
                          / self.territory_volume[term])

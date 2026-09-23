@@ -241,21 +241,17 @@ PERFUSION_REGIONS = {
         "LCX":  [4, 5, 6, 10, 11, 12, 15, 16],
         "RCA":  [3, 9],
     },
-    # The full tree is Wang Fig. 5 verbatim.  PLA has NO AHA segments: it
-    # supplies right ventricle, which this LV-only mesh does not contain.
-    # See EXTRA_LV_TERMINALS below for how its IMP is handled.
-    "full": {
-        "LAD1":  [1, 2, 8],
-        "LAD4":  [7],
-        "LAD3":  [13, 14, 17],
-        "MARG1": [6, 12],
-        "MARG2": [5, 11],
-        "MARG3": [15, 16],
-        "LCX3":  [4, 10],
-        "PDA":   [3, 9],
-        "PLA":   [],
-    },
+    # There is deliberately no "full" entry.  The full tree's territory map is
+    # dependencies/aha_segmentation.PERFUSION_REGIONS -- the one validated in
+    # ParaView -- and perfusion.py reads it from there.  See
+    # TERRITORIES_DEFINED_IN_AHA below.
 }
+
+# Configurations whose territory map lives in dependencies/aha_segmentation.py
+# rather than here.  Keeping a copy would let the two drift apart silently, so
+# there is exactly one.  aha_segmentation checks its own partition of AHA 1..17
+# at import, so nothing is lost by not checking it again here.
+TERRITORIES_DEFINED_IN_AHA = ("full",)
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +266,51 @@ PERFUSION_REGIONS = {
 # These terminals still carry flow and still load the tree -- PLA takes about
 # 80 mL/min, which is a real part of the coronary circulation.  They are just
 # excluded from the AHA 1..17 partition check, since they own no LV segments.
+
+# ---------------------------------------------------------------------------
+# Physiological terminal resistances
+# ---------------------------------------------------------------------------
+# Wang's published Z give LV perfusion of 2.19 mL/min/g on this mesh -- about
+# twice the healthy resting value -- and very uneven: LAD4 received 6.5
+# mL/min/g while LAD1 received 1.2.  That is not a heart-size mismatch (Wang
+# report EDV 100.9 mL against 90.6 here); it is their parameters.
+#
+# These values give every LV territory the same resting perfusion,
+# 1.0 mL/min/g, the healthy-adult PET median (Kero et al. / Rb-82 reference
+# cohort: median 1.00, IQR 0.82-1.18 mL/g/min).  Uniform per gram is a
+# first-order approximation: at territory scale (8-27 g) the fractal law of
+# Bassingthwaighte et al. predicts only ~10% inter-territory variation, far
+# below the 75% the published Z produced.
+#
+# Calibrated against the baroreflex-on baseline (P_AO and stress IMP from
+# t = 58.7-80 s), R-L-C, iterating Z_i <- Z_i * Q_i/Q_target_i to 0.005%.
+# Because the coupling is one-way, the mechanics do not depend on Z, so the
+# calibration is exact for that operating point.
+#
+# Territory masses from the mesh (reference volume x 1.05 g/mL):
+#   LAD1 27.33  LAD3 15.89  LAD4 8.47  MARG1 17.07  MARG2 17.89
+#   MARG3 13.26  LCX3 17.89  PDA 17.05        LV total 134.8 g
+#
+# PLA has no LV tissue.  It takes the same factor the LV total needed
+# (x2.27), giving 37.8 mL/min for the right-ventricular region.
+#
+# Select with "rt_set": ["physiological"] in the JSON; the default,
+# "published", keeps Wang's Table 1 values.
+
+TERMINAL_RESISTANCE_PHYSIO = {
+    "full": {
+        "LAD1":   176.95,
+        "LAD3":   289.95,
+        "LAD4":   567.33,
+        "MARG1":  278.29,
+        "MARG2":  268.36,
+        "MARG3":  357.59,
+        "LCX3":   266.09,
+        "PDA":    275.49,
+        "PLA":    135.77,
+    },
+}
+
 
 EXTRA_LV_TERMINALS = {
     "full": {"PLA": 1.0 / 3.0},
@@ -438,7 +479,9 @@ def check_tables(verbose=False):
                               % (sub, segs[s]["node_d"], s))
 
         # territory map: exists, keyed by the actual terminals, partitions 1..17
-        if sub not in PERFUSION_REGIONS:
+        if sub in TERRITORIES_DEFINED_IN_AHA:
+            pass    # checked by aha_segmentation itself, and by perfusion.py
+        elif sub not in PERFUSION_REGIONS:
             errors.append("%s: no perfusion territory map" % sub)
         else:
             reg = PERFUSION_REGIONS[sub]
@@ -521,7 +564,8 @@ class CoronaryRC(object):
         self.terminals = [self.terminal_segment[n]
                           for n in self.terminal_nodes]
 
-        self.regions = PERFUSION_REGIONS[subtree]
+        # Empty for the full tree, whose map is in aha_segmentation.py.
+        self.regions = PERFUSION_REGIONS.get(subtree, {})
 
         if terminal_resistance is None:
             terminal_resistance = TERMINAL_RESISTANCE[subtree]
@@ -705,7 +749,8 @@ class CoronaryRC(object):
             print("              %-8s = P_IMP[%s]  (beyond Rt = %.4g)"
                   % ("IMP_" + s, s, self.Rt[s]))
         for s in self.terminals:
-            print("  %-5s -> AHA %s" % (s, self.regions[s]))
+            print("  %-5s -> AHA %s"
+                  % (s, self.regions.get(s, "see aha_segmentation.py")))
 
 
 # ---------------------------------------------------------------------------

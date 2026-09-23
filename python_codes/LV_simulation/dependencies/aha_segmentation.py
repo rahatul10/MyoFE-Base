@@ -62,6 +62,26 @@ APICAL_MAP = np.array([13, 16, 15, 14])         # k = floor((theta_deg + 15) / 9
 
 APEX_CAP_ID = 17
 
+# ---------------------------------------------------------------------------
+# GEOMETRY of the baseline mesh -- the single source for every module
+# ---------------------------------------------------------------------------
+# These are the values measured offline (see the module docstring) and the
+# ones used to produce the ParaView validation (aha_points.csv) that was
+# approved.  c_ref = +x puts theta = 0 on the x axis; verified against that
+# CSV, where every one of the 5008 Gauss points and 1252 cells reproduces.
+#
+# Import this rather than keeping a copy.  perfusion.py reads it directly, so
+# changing the mesh means changing it HERE and nowhere else.
+AHA_GEOMETRY = {
+    "apex_point":  [0.0, 0.0, -0.7315],
+    "axis_vector": [0.0, 0.0, 1.0],
+    "axis_length": 0.7315,
+    "c_ref":       [1.0, 0.0, 0.0],
+    "lambda_c":    0.0902,
+    "lambda_A":    0.3935,
+    "lambda_M":    0.6967,
+}
+
 # Derived, not tuned.  theta = 0 sits at the anteroseptal/anterior boundary, so
 # anterior is at theta = 30 (centre of segment 1's 60-degree sector).  Apical
 # segment 13 must be centred on that same direction, so its 90-degree sector
@@ -69,9 +89,6 @@ APEX_CAP_ID = 17
 # the anchor c_ref; both ring offsets follow from it.  Never tune this.
 APICAL_OFFSET_DEG = 15.0
 
-LAD = [1, 2, 7, 8, 13, 14, 17]
-RCA = [3, 4, 9, 10, 15]
-LCX = [5, 6, 11, 12, 16]
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +130,49 @@ if _assigned != list(range(1, 18)):
     raise RuntimeError(
         "PERFUSION_REGIONS is not a clean partition of AHA segments 1..17. "
         "Got %s." % _assigned)
+
+
+# ---------------------------------------------------------------------------
+# MAIN-VESSEL TERRITORIES (LAD / LCX / RCA)
+# ---------------------------------------------------------------------------
+# Which main coronary artery each perfusion region branches from, following the
+# tree topology: LAD1/3/4 come off the LAD, the marginals and LCX3 off the
+# circumflex, PDA off the RCA.
+#
+# The LAD / LCX / RCA segment lists are DERIVED from PERFUSION_REGIONS through
+# this table, never written out by hand.  An earlier hand-written version used
+# the textbook right-dominant map and put segments 4, 10 and 15 in the RCA,
+# contradicting PERFUSION_REGIONS, which puts them in the circumflex (LCX3 and
+# MARG3).  Deriving them makes that kind of disagreement impossible.
+REGION_TO_VESSEL = {
+    "LAD1": "LAD",
+    "LAD3": "LAD",
+    "LAD4": "LAD",
+    "MARG1": "LCX",
+    "MARG2": "LCX",
+    "MARG3": "LCX",
+    "LCX3": "LCX",
+    "PDA": "RCA",
+}
+
+if sorted(REGION_TO_VESSEL) != sorted(PERFUSION_REGIONS):
+    raise RuntimeError(
+        "REGION_TO_VESSEL covers %s but PERFUSION_REGIONS has %s -- every "
+        "perfusion region needs exactly one main vessel."
+        % (sorted(REGION_TO_VESSEL), sorted(PERFUSION_REGIONS)))
+
+
+def _segments_of_vessel(vessel):
+    segs = []
+    for name, v in REGION_TO_VESSEL.items():
+        if v == vessel:
+            segs.extend(PERFUSION_REGIONS[name])
+    return sorted(segs)
+
+
+LAD = _segments_of_vessel("LAD")      # [1, 2, 7, 8, 13, 14, 17]
+LCX = _segments_of_vessel("LCX")      # [4, 5, 6, 10, 11, 12, 15, 16]
+RCA = _segments_of_vessel("RCA")      # [3, 9]
 
 
 def build_frame(params):
@@ -273,7 +333,11 @@ def segment_elements(xq, params, n_quad_per_cell=4):
 
 
 def territory(segment):
-    """Map AHA segments to 1=LAD, 2=RCA, 3=LCX.  For the perfusion law.
+    """Map AHA segments to 1=LAD, 2=RCA, 3=LCX (main-vessel territories).
+
+    The LAD / RCA / LCX lists are rolled up from PERFUSION_REGIONS, so this
+    always agrees with region_of(): a segment's main vessel is the vessel its
+    perfusion region branches from.
 
     np.in1d rather than np.isin -- the numpy in the FEniCS 2017 image predates it.
     """

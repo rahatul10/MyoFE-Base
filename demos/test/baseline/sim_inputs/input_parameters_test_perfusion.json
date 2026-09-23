@@ -43,7 +43,7 @@
             "activations": [
                 {
                     "t_stop_s": [
-                        80
+                        800
                     ], 
                     "t_start_s": [
                         15
@@ -514,13 +514,7 @@
                 4
             ]
         },
-        "perfusion": {
-            "subtree": ["full"],
-            "imp_source": ["stress"],
-            "imp_scale": [1.0],
-            "imp_diagnostic": [false],
-            "imp_peak": [{"LAD1": 70.0, "LAD3": 70.0, "LAD4": 70.0, "MARG1": 70.0, "MARG2": 70.0, "MARG3": 70.0, "LCX3": 70.0, "PDA": 70.0, "PLA": 23.0}]
-        }
+        "perfusion": {}
         
     }, 
     "heart_rate": {

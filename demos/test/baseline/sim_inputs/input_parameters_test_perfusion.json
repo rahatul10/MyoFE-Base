@@ -37,7 +37,7 @@
             ]
         }, 
         "no_of_time_steps": [
-            80000
+            15000
         ], 
         "baroreflex": {
             "activations": [
@@ -514,7 +514,7 @@
                 4
             ]
         },
-        
+
         "perfusion": {
             "stenosis": [{"LMCA": 80}]
         }

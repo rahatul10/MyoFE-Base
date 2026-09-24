@@ -410,6 +410,48 @@ def _resolve_segments(subtree):
     return out
 
 
+def apply_stenosis(segments, stenosis):
+    """Narrow segments in place, following Wang et al. Eq. 1.
+
+    stenosis : {segment name: percent AREA reduction}, e.g. {"LMCA": 80}.
+               80 means 80% of the lumen area is lost, beta = A_s/A_0 = 0.2.
+
+        R_s = R beta^-2     L_s = L beta^-1     C_s = C beta^(3/2)
+
+    These follow from R ~ D^-4, L ~ D^-2 and C ~ D^3 (Wang Eq. 2) with the
+    segment length fixed, since D_s/D_0 = beta^(1/2).  segments must be the
+    tree's own copies (as _resolve_segments returns), so SEGMENTS -- Wang's
+    Table 1 -- is never changed.
+
+    Returns {name: dict(percent, beta, before=(R, L, C), after=(R, L, C))}
+    for logging.
+    """
+    applied = {}
+    for name in sorted(stenosis):
+        if name not in segments:
+            raise ValueError(
+                "stenosis on '%s': no such segment in this tree.  Segments "
+                "are %s" % (name, sorted(segments)))
+        pct = float(stenosis[name])
+        if not 0.0 <= pct < 100.0:
+            raise ValueError(
+                "stenosis on %s is %g%%: give percent area reduction, "
+                "0 <= value < 100" % (name, pct))
+        if 0.0 < pct < 1.0:
+            raise ValueError(
+                "stenosis on %s is %g: give PERCENT area reduction, e.g. 80 "
+                "for 80%%, not 0.8" % (name, pct))
+        beta = 1.0 - pct / 100.0
+        seg = segments[name]
+        before = (seg["R"], seg["L"], seg["C"])
+        seg["R"] = seg["R"] * beta ** -2
+        seg["L"] = seg["L"] * beta ** -1
+        seg["C"] = seg["C"] * beta ** 1.5
+        applied[name] = dict(percent=pct, beta=beta, before=before,
+                             after=(seg["R"], seg["L"], seg["C"]))
+    return applied
+
+
 def terminals_of(subtree):
     """Segment names that end in myocardium for this configuration."""
     segs = _resolve_segments(subtree)
@@ -538,7 +580,7 @@ class CoronaryRC(object):
     """
 
     def __init__(self, subtree, dt, terminal_resistance=None,
-                 inertance=False):
+                 inertance=False, stenosis=None):
         """subtree is a key of SUBTREES.  terminal_resistance may be None (no
         downstream resistance), a single number applied to every territory, or
         a dict keyed by terminal segment name; omitted, the calibrated table
@@ -547,6 +589,8 @@ class CoronaryRC(object):
         self.subtree = subtree
         self.inertance = bool(inertance)
         self.segments = _resolve_segments(subtree)
+        # Narrowed segments, if any: {name: percent area reduction}.
+        self.stenosis = apply_stenosis(self.segments, stenosis or {})
         self.names = list(SUBTREES[subtree])
         self.dt = dt
 

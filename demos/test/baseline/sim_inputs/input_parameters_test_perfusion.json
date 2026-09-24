@@ -514,7 +514,10 @@
                 4
             ]
         },
-        "perfusion": {}
+        
+        "perfusion": {
+            "stenosis": [{"LMCA": 80}]
+        }
         
     }, 
     "heart_rate": {

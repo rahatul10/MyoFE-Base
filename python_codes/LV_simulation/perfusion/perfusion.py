@@ -146,6 +146,15 @@ class perfusion(object):
         #                    only for comparing against the paper
         self.rt_set = self.model.get('rt_set', 'physiological')
 
+        # Stenosis: {segment name: percent AREA reduction}, Wang Eq. 1.
+        #     "stenosis": [{"LMCA": 80}]              one segment
+        #     "stenosis": [{"LMCA": 50, "RCA": 70}]   several
+        # Leave it out for no stenosis.  Terminal resistances are NOT
+        # recalibrated, so the narrowing reduces flow.
+        self.stenosis = self.model.get('stenosis', {}) or {}
+        if not isinstance(self.stenosis, dict):
+            raise ValueError('stenosis must look like "stenosis": [{"LMCA": 80}]')
+
         subtree = self.model.get('subtree', 'full')
         if subtree not in SUBTREES:
             raise ValueError("unknown coronary subtree '%s'; options are %s"
@@ -197,7 +206,21 @@ class perfusion(object):
         self.time_step = None
         self.tree = CoronaryRC(subtree, 1.0,
                                terminal_resistance=self.terminal_resistance,
-                               inertance=self.inertance)
+                               inertance=self.inertance,
+                               stenosis=self.stenosis)
+
+        if self.tree.stenosis:
+            print("perfusion: stenosis (percent AREA reduction, Wang Eq. 1)")
+            for name in sorted(self.tree.stenosis):
+                a = self.tree.stenosis[name]
+                print("    %-6s %5.1f%%  beta %.3f   R %.4f -> %.4f   "
+                      "L %.4f -> %.4f   C %.3e -> %.3e"
+                      % (name, a['percent'], a['beta'],
+                         a['before'][0], a['after'][0],
+                         a['before'][1], a['after'][1],
+                         a['before'][2], a['after'][2]))
+        else:
+            print("perfusion: no stenosis")
 
         self.imp_peak_mmHg = self.model.get('imp_peak', {})
         for s in self.tree.terminals:
@@ -243,7 +266,8 @@ class perfusion(object):
         self.time_step = time_step
         self.tree = CoronaryRC(self.subtree, time_step,
                                terminal_resistance=self.terminal_resistance,
-                               inertance=self.inertance)
+                               inertance=self.inertance,
+                               stenosis=self.stenosis)
         self.P = self.tree.steady_state(self.initial_pressure_arteries,
                                         self.return_prescribed_imp(0.0))
 

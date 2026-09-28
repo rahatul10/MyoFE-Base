@@ -276,38 +276,49 @@ TERRITORIES_DEFINED_IN_AHA = ("full",)
 # report EDV 100.9 mL against 90.6 here); it is their parameters.
 #
 # These values give every LV territory the same resting perfusion,
-# 1.0 mL/min/g, the healthy-adult PET median (Kero et al. / Rb-82 reference
-# cohort: median 1.00, IQR 0.82-1.18 mL/g/min).  Uniform per gram is a
+# 1.0 mL/min/g, the healthy-adult PET median (Lassen et al., Eur J Nucl Med
+# Mol Imaging 2026, doi:10.1007/s00259-026-07983-3: Rb-82 PET in 277 healthy
+# adults, median 1.00, IQR 0.82-1.18 mL/g/min).  Uniform per gram is a
 # first-order approximation: at territory scale (8-27 g) the fractal law of
 # Bassingthwaighte et al. predicts only ~10% inter-territory variation, far
 # below the 75% the published Z produced.
 #
-# Calibrated against the baroreflex-on baseline (P_AO and stress IMP from
-# t = 58.7-80 s), R-L-C, iterating Z_i <- Z_i * Q_i/Q_target_i to 0.005%.
-# Because the coupling is one-way, the mechanics do not depend on Z, so the
-# calibration is exact for that operating point.
+# Calibrated against the current healthy baseline: the labmate-derived
+# parameter set (baseline_guccioneMSB -- myosim, circulation, passive law,
+# gentler baroreflex, 1e-8 solver tolerance), baroreflex from 15 s, run to
+# 60 s.  P_AO and stress IMP recorded over t = 45.8-59.6 s (16 whole beats;
+# baroreflex settled, drift 0.011 mmHg/s), R-L-C, iterating
+# Z_i <- Z_i * Q_i/Q_target_i to 0.0003%.  Because the coupling is one-way,
+# the mechanics do not depend on Z, so the calibration is exact for that
+# operating point.  Recalibrate whenever the heart's parameters change.
+#
+# The previous calibration (old parameter set) was
+#   LAD1 176.95  LAD3 289.95  LAD4 567.33  MARG1 278.29  MARG2 268.36
+#   MARG3 357.59  LCX3 266.09  PDA 275.49  PLA 135.77
+# The new heart has higher IMP (73-85 against 60-69 mmHg), so each Z is
+# 7-11% lower for the same flow.
 #
 # Territory masses from the mesh (reference volume x 1.05 g/mL):
 #   LAD1 27.33  LAD3 15.89  LAD4 8.47  MARG1 17.07  MARG2 17.89
 #   MARG3 13.26  LCX3 17.89  PDA 17.05        LV total 134.8 g
 #
-# PLA has no LV tissue.  It takes the same factor the LV total needed
-# (x2.27), giving 37.8 mL/min for the right-ventricular region.
+# PLA has no LV tissue.  It takes the same factor the LV total needed,
+# giving 40.5 mL/min for the right-ventricular region.
 #
-# Select with "rt_set": ["physiological"] in the JSON; the default,
-# "published", keeps Wang's Table 1 values.
+# "rt_set": ["physiological"] (the default) uses these; "published" uses
+# Wang's Table 1 values.
 
 TERMINAL_RESISTANCE_PHYSIO = {
     "full": {
-        "LAD1":   176.95,
-        "LAD3":   289.95,
-        "LAD4":   567.33,
-        "MARG1":  278.29,
-        "MARG2":  268.36,
-        "MARG3":  357.59,
-        "LCX3":   266.09,
-        "PDA":    275.49,
-        "PLA":    135.77,
+        "LAD1":   157.10,
+        "LAD3":   270.12,
+        "LAD4":   511.98,
+        "MARG1":  249.31,
+        "MARG2":  238.52,
+        "MARG3":  329.20,
+        "LCX3":   236.56,
+        "PDA":    247.19,
+        "PLA":    122.14,
     },
 }
 

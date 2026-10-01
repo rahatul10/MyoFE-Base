@@ -283,42 +283,52 @@ TERRITORIES_DEFINED_IN_AHA = ("full",)
 # Bassingthwaighte et al. predicts only ~10% inter-territory variation, far
 # below the 75% the published Z produced.
 #
-# Calibrated against the current healthy baseline: the labmate-derived
-# parameter set (baseline_guccioneMSB -- myosim, circulation, passive law,
-# gentler baroreflex, 1e-8 solver tolerance), baroreflex from 15 s, run to
-# 60 s.  P_AO and stress IMP recorded over t = 45.8-59.6 s (16 whole beats;
-# baroreflex settled, drift 0.011 mmHg/s), R-L-C, iterating
-# Z_i <- Z_i * Q_i/Q_target_i to 0.0003%.  Because the coupling is one-way,
-# the mechanics do not depend on Z, so the calibration is exact for that
-# operating point.  Recalibrate whenever the heart's parameters change.
+# Calibrated against the current healthy baseline ("run B"): the
+# labmate-derived parameter set (baseline_guccioneMSB -- circulation, passive
+# law, gentler baroreflex) with k_1 = 5.5 and k_act = 0.0830.  EDV 113.7 mL,
+# ESV 54.3 mL, EF 52.2%, HR 67.6 bpm, peak LV pressure 114.8 mmHg -- volumes
+# and heart rate inside the clinical-control ranges.  Chosen over the stronger
+# k_1 6.0 / k_act 0.090 set because it keeps the better coronary
+# diastolic:systolic flow ratio (1.88 against 1.74 into the muscle), as
+# agreed with Dr. Wenk.  Baroreflex from 15 s, run to 50 s; P_AO and stress
+# IMP recorded over t = 40.2-49.9 s (11 whole beats; baroreflex settled,
+# drift 0.015 mmHg/s), R-L-C, iterating Z_i <- Z_i * Q_i/Q_target_i to
+# 0.001%.  Because the coupling is one-way, the mechanics do not depend on Z,
+# so the calibration is exact for that operating point.  Recalibrate whenever
+# the heart's parameters change.
 #
-# The previous calibration (old parameter set) was
-#   LAD1 176.95  LAD3 289.95  LAD4 567.33  MARG1 278.29  MARG2 268.36
-#   MARG3 357.59  LCX3 266.09  PDA 275.49  PLA 135.77
-# The new heart has higher IMP (73-85 against 60-69 mmHg), so each Z is
-# 7-11% lower for the same flow.
+# Other calibrations, for reference:
+#   k_1 6.0, k_act 0.090 ("run C", data_6):
+#     LAD1 163.23  LAD3 276.53  LAD4 528.89  MARG1 258.90  MARG2 247.79
+#     MARG3 337.89  LCX3 245.60  PDA 255.91  PLA 126.41
+#   labmate set, k_1 5.15, k_act 0.0806 (data_4):
+#     LAD1 157.10  LAD3 270.12  LAD4 511.98  MARG1 249.31  MARG2 238.52
+#     MARG3 329.20  LCX3 236.56  PDA 247.19  PLA 122.14
+#   original parameter set (data_3):
+#     LAD1 176.95  LAD3 289.95  LAD4 567.33  MARG1 278.29  MARG2 268.36
+#     MARG3 357.59  LCX3 266.09  PDA 275.49  PLA 135.77
 #
 # Territory masses from the mesh (reference volume x 1.05 g/mL):
 #   LAD1 27.33  LAD3 15.89  LAD4 8.47  MARG1 17.07  MARG2 17.89
 #   MARG3 13.26  LCX3 17.89  PDA 17.05        LV total 134.8 g
 #
 # PLA has no LV tissue.  It takes the same factor the LV total needed,
-# giving 40.5 mL/min for the right-ventricular region.
+# giving 40.1 mL/min for the right-ventricular region.
 #
 # "rt_set": ["physiological"] (the default) uses these; "published" uses
 # Wang's Table 1 values.
 
 TERMINAL_RESISTANCE_PHYSIO = {
     "full": {
-        "LAD1":   157.10,
-        "LAD3":   270.12,
-        "LAD4":   511.98,
-        "MARG1":  249.31,
-        "MARG2":  238.52,
-        "MARG3":  329.20,
-        "LCX3":   236.56,
-        "PDA":    247.19,
-        "PLA":    122.14,
+        "LAD1":   159.32,
+        "LAD3":   272.52,
+        "LAD4":   517.92,
+        "MARG1":  252.78,
+        "MARG2":  241.75,
+        "MARG3":  332.68,
+        "LCX3":   239.69,
+        "PDA":    250.24,
+        "PLA":    123.67,
     },
 }
 

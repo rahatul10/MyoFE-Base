@@ -10,13 +10,13 @@
                         "aorta_resistance"
                     ],
                     "t_stop_s": [
-                        300
+                        30
                     ],
                     "total_change": [
-                        170
+                        200
                     ],
                     "t_start_s": [
-                        200
+                        20
                     ],
                     "level": [
                         "circulation"
@@ -37,7 +37,7 @@
             ]
         },
         "no_of_time_steps": [
-            50000
+            80000
         ],
         "baroreflex": {
             "activations": [
@@ -101,7 +101,7 @@
                     0.001
                 ],
                 "k_1": [
-                    6.0
+                    5.5
                 ],
                 "ext_passive_exp_L": [
                     70
@@ -186,7 +186,7 @@
                     0.01
                 ],
                 "k_act": [
-                    0.0900
+                    0.0830
                 ],
                 "implementation": {
                     "kinetic_scheme": [

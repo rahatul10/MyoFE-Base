@@ -530,13 +530,13 @@
     "output_handler": {
         "mesh_object_to_save": [],
         "mesh_output_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/perfusion_baseline/sim_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/perfusion/sim_output/"
         ],
         "dumping_spatial_in_average": [
             false
         ],
         "output_data_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/perfusion_baseline/sim_output/data.csv"
+            "/mnt/gpfs2_4m/scratch/ris237/perfusion/sim_output/data.csv"
         ],
         "frequency_n": [
             10

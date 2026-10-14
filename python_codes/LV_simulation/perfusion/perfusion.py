@@ -99,21 +99,31 @@ except (ImportError, ValueError):
 # Perfusion -> cross-bridge detachment coupling
 # ---------------------------------------------------------------------------
 # Hypothesis: no blood -> no ATP -> no detachment.  Myosin must bind ATP to
-# release actin at every strain, and MyoSim lumps that step into the
-# detachment rate r_4 = k_4,0 + k_4,1 x^4 (kinetics.py).  Once per beat, in
-# each LV territory i:
+# release actin at every strain, and MyoSim lumps that step into its
+# detachment rate (kinetics.py, Eq. 16).  Notation:
+#
+#     p_i      relative perfusion of LV territory i
+#     k_f,i    detachment scaling factor of territory i
+#     k_det    detachment rate coefficient,  k_det(x) = k_4,0 + k_4,1 x^4
+#     J_4,i    cross-bridge detachment flux in territory i
+#
+# Once per beat, in each LV territory i:
 #
 #     p_i   = clip( Qbar_i / Q_ref,i , 0, 1 )      beat-mean flow / healthy flow
 #     k_f,i -> k_f,i + (c + (1 - c) p_i - k_f,i) / n_tau
 #     k_4,0 -> k_f,i * k_4,0      k_4,1 -> k_f,i * k_4,1     at every point in i
 #
-# p = 1 gives back the original MyoSim; p = 0 gives k_f = c.  Both rates are
+# so that kinetics.py, unchanged, computes
+#
+#     J_4,i(x) = min( max_rate, k_f,i * k_det(x) ) * M_FG(x)
+#
+# p_i = 1 gives back the original MyoSim; p_i = 0 gives k_f,i = c.  Both rates are
 # scaled because k_4,0 carries most of the detachment (78% of it in an
 # isometric beat): attached heads sit near x = 0, where k_4,1 x^4 is small.
 #
 # Slower detachment keeps heads attached: force rises and relaxation slows.
 # That raises IMP and cuts flow further, so the loop is REINFORCING.  The
-# floor c and the n_tau-beat lag keep it stable; below k_f ~ 0.4 a half-
+# floor c and the n_tau-beat lag keep it stable; below k_f,i ~ 0.4 a half-
 # sarcomere no longer relaxes before the next beat.
 #
 # Everything runs inside this module: LV_simulation.py is not changed.

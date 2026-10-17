@@ -10,13 +10,13 @@
                         "aorta_resistance"
                     ],
                     "t_stop_s": [
-                        30
+                        300
                     ],
                     "total_change": [
-                        700
+                        120
                     ],
                     "t_start_s": [
-                        20
+                        200
                     ],
                     "level": [
                         "circulation"
@@ -500,7 +500,7 @@
                 ]
             },
             "b_setpoint": [
-                90
+                120
             ]
         },
         "fiber_reorientation": {

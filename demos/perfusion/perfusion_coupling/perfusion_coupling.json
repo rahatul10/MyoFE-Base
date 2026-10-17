@@ -37,7 +37,7 @@
             ]
         },
         "no_of_time_steps": [
-            60000
+            80000
         ],
         "baroreflex": {
             "activations": [
@@ -515,6 +515,11 @@
             ]
         },
         "perfusion": {
+            "stenosis": [
+                {
+                    "LAD": 80
+                }
+            ],
             "detachment_coupling": [
                 {
                     "c": 0.5,
@@ -557,13 +562,13 @@
                     false
                 ],
                 "rel_tol": [
-                    1e-04
+                    0.0001
                 ],
                 "max_iter": [
                     100
                 ],
                 "abs_tol": [
-                    1e-04
+                    0.0001
                 ]
             }
         },

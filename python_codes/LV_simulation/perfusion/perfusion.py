@@ -129,8 +129,17 @@ except (ImportError, ValueError):
 # Everything runs inside this module: LV_simulation.py is not changed.
 #
 # JSON (inside "perfusion"; every key optional):
-#     "detachment_coupling": [{"c": 0.5, "n_tau": 3, "t_start_s": 40}]
+#     "detachment_coupling": [{"c": 0.5, "n_tau": 3, "t_start_s": 5}]
 # Leave it out and the coupling is off: nothing in MyoSim is touched.
+#
+# Two ways to set how much perfusion a territory gets:
+#   1. "stenosis": [{"LAD": 80}] -- narrow a vessel; the coronary tree then
+#      decides each territory's flow, and p_i is MEASURED from it.
+#   2. "p_prescribed": {"LAD1": 0.0, "LAD3": 0.5} inside detachment_coupling
+#      -- fix p_i directly (0 = no flow, 1 = normal).  Named territories use
+#      this value instead of the measured one; the others stay measured.
+#      The coronary tree still runs and its flows are still written, but
+#      they no longer drive those territories.
 #
 # Q_ref: beat-mean flow per LV territory in the healthy run B baseline
 # (data_8.csv, t = 65.9-79.2 s, 15 beats), mL/min.  Tied to the heart AND to
@@ -142,7 +151,7 @@ DEFAULT_Q_REF = {
     "LCX3": 17.91, "PDA": 17.07,
 }
 
-COUPLING_KEYS = ('c', 'n_tau', 't_start_s', 'q_ref')
+COUPLING_KEYS = ('c', 'n_tau', 't_start_s', 'q_ref', 'p_prescribed')
 
 
 def _is_root(parent):
@@ -516,6 +525,24 @@ class perfusion(object):
                                  "which is not an LV territory of this tree; "
                                  "territories are %s" % (k, terms))
             q_ref[k] = float(_scalar(v))
+        p_set = {}
+        user = _scalar(spec['p_prescribed']) if 'p_prescribed' in spec else {}
+        if not isinstance(user, dict):
+            raise ValueError('detachment_coupling: p_prescribed must look like '
+                             '"p_prescribed": {"LAD1": 0.0}')
+        for k, v in user.items():
+            if k not in terms:
+                raise ValueError("detachment_coupling: p_prescribed given for "
+                                 "'%s', which is not an LV territory of this "
+                                 "tree; territories are %s" % (k, terms))
+            v = float(_scalar(v))
+            if not 0.0 <= v <= 1.0:
+                raise ValueError(
+                    "detachment_coupling: p_prescribed for %s is %g.  Give the "
+                    "relative perfusion as a FRACTION: 0 = no flow, 1 = normal "
+                    "(so 0.3, not 30)" % (k, v))
+            p_set[k] = v
+
         missing = [t for t in terms if t not in q_ref]
         if missing:
             raise ValueError("detachment_coupling: no reference flow for %s "
@@ -527,6 +554,7 @@ class perfusion(object):
 
         self.coupling = dict(
             c=c, n_tau=n_tau, t_start=t_start, terms=terms, q_ref=q_ref,
+            p_set=p_set,          # territories whose p_i is fixed, not measured
             k_f=dict((t, 1.0) for t in terms),
             p=dict((t, 1.0) for t in terms),
             vol=dict((t, 0.0) for t in terms), T=0.0,
@@ -545,6 +573,9 @@ class perfusion(object):
                   % (c, 1.0 - c, n_tau, t_start))
             print("perfusion:   Q_ref (mL/min)  " + "  ".join(
                 "%s %.2f" % (t, q_ref[t]) for t in terms))
+            if p_set:
+                print("perfusion:   p PRESCRIBED (not measured)  " + "  ".join(
+                    "%s %g" % (t, p_set[t]) for t in terms if t in p_set))
 
     def coupling_point_map(self, hs_objs_list, mesh_model):
         """Territory of every local integration point, via the quadrature
@@ -626,8 +657,11 @@ class perfusion(object):
 
         if cp['armed'] and cp['T'] > 0.0:
             for s in cp['terms']:
-                qbar = 60.0 * cp['vol'][s] / cp['T']          # mL/min
-                p = min(1.0, max(0.0, qbar / cp['q_ref'][s]))
+                if s in cp['p_set']:
+                    p = cp['p_set'][s]                        # fixed in JSON
+                else:
+                    qbar = 60.0 * cp['vol'][s] / cp['T']      # mL/min
+                    p = min(1.0, max(0.0, qbar / cp['q_ref'][s]))
                 target = cp['c'] + (1.0 - cp['c']) * p
                 cp['k_f'][s] += (target - cp['k_f'][s]) / cp['n_tau']
                 cp['p'][s] = p

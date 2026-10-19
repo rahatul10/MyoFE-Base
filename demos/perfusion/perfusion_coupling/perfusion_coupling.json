@@ -517,7 +517,7 @@
         "perfusion": {
             "stenosis": [
                 {
-                    "LAD": 80
+                    "LAD": 20
                 }
             ],
             "detachment_coupling": [

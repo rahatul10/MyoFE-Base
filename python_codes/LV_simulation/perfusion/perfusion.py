@@ -153,6 +153,25 @@ DEFAULT_Q_REF = {
 
 COUPLING_KEYS = ('c', 'n_tau', 't_start_s', 'q_ref', 'p_prescribed')
 
+# ---------------------------------------------------------------------------
+# Territory outputs: per LV territory, every timestep, into data.csv
+# ---------------------------------------------------------------------------
+#     J4_<terr>             mean cross-bridge detachment flux
+#                               J_4,i = sum_x min(max_rate, k_f,i k_det(x)) M_FG(x)
+#                           fraction of myosin heads detaching per second (1/s).
+#                           Read from kinetics.py's own fluxes['J_4'] (it calls
+#                           the capped, scaled k_det "r_4"), so it follows k_f.
+#     k_4_0_<terr>          k_4,0 in use (1/s) = k_f * base
+#     k_4_1_<terr>          x^4 detachment coefficient in use       = k_f * base
+#     k_1_<terr>            SRX -> DRX rate in use (the baroreflex moves it)
+#     active_stress_<terr>  cross-bridge (active) stress along the fibre, Pa --
+#                           LV_simulation's cb_stress_list, so one timestep old
+# Each is the volume-weighted mean over the territory's integration points
+# (reference cell volumes), summed over all MPI ranks.  On by default;
+#     "territory_outputs": [false]
+# inside "perfusion" turns them off.
+TERRITORY_FIELDS = ('J4', 'k_4_0', 'k_4_1', 'k_1', 'active_stress')
+
 
 def _is_root(parent):
     """True on MPI rank 0, so start-up messages print once, not once per rank."""
@@ -331,7 +350,14 @@ class perfusion(object):
                 self.data['imp_stress_' + s] = 0.0
                 self.data['imp_radial_' + s] = 0.0
 
+        # Territory of every local integration point and its volume weight,
+        # built once on the first step (build_point_map).  Shared by the
+        # detachment coupling and the territory outputs.
+        self.point_term = None
+        self.point_w = None
+
         self.setup_coupling(self.model.get('detachment_coupling', None))
+        self.setup_territory_outputs(self.model.get('territory_outputs', True))
 
     # -----------------------------------------------------------------
     # setup
@@ -577,40 +603,136 @@ class perfusion(object):
                 print("perfusion:   p PRESCRIBED (not measured)  " + "  ".join(
                     "%s %g" % (t, p_set[t]) for t in terms if t in p_set))
 
-    def coupling_point_map(self, hs_objs_list, mesh_model):
+    def build_point_map(self, hs_objs_list, mesh_model):
         """Territory of every local integration point, via the quadrature
-        dofmap, so no ordering of quadrature points is assumed.
+        dofmap, so no ordering of quadrature points is assumed.  Built once.
 
         hs_objs_list[j] is the half-sarcomere at local quadrature dof j: it
         is filled from, and written back to, the local vector of a function
         on quadrature_space.  Each cell's points take that cell's territory,
-        the same per-cell labelling that IMP is integrated over.
+        the same per-cell labelling that IMP is integrated over.  Each point
+        also gets an equal share of its cell's reference volume, the weight
+        for the territory means (the degree-2 tetrahedral rule has equal
+        weights).
         """
+        if self.point_term is not None:
+            return
         if self.dx is None:
             self.build_territory_marker(mesh_model)
+        from dolfin import Cell
 
+        mesh = mesh_model['mesh']
         name_of = dict((tag, name) for name, tag in self.tag_of.items())
         dm = mesh_model['function_spaces']['quadrature_space'].dofmap()
         n = len(hs_objs_list)
         point_tag = -np.ones(n, dtype=int)
+        point_w = np.zeros(n)
         n_set = 0
         for cell in range(len(self.cell_tag)):
-            for d in dm.cell_dofs(cell):
-                d = int(d)
+            dofs = [int(d) for d in dm.cell_dofs(cell)]
+            share = Cell(mesh, cell).volume() / max(len(dofs), 1)
+            for d in dofs:
                 if 0 <= d < n:
                     point_tag[d] = self.cell_tag[cell]
+                    point_w[d] = share
                     n_set += 1
         if np.any(point_tag < 0) or n_set != n:
             raise RuntimeError(
-                "detachment coupling: %d of %d local integration points got no "
+                "perfusion: %d of %d local integration points got no "
                 "territory (%d assignments).  The quadrature dofmap does not "
                 "match hs_objs_list." % (int(np.sum(point_tag < 0)), n, n_set))
 
+        self.point_term = [name_of.get(tg) for tg in point_tag]
+        self.point_w = point_w
+
+    def coupling_point_map(self, hs_objs_list, mesh_model):
+        """Which coupled territory each local point is in, and its base
+        k_4_0 / k_4_1 (the values that k_f scales)."""
+        self.build_point_map(hs_objs_list, mesh_model)
         cp = self.coupling
-        cp['point_term'] = [name_of[tg] if name_of.get(tg) in cp['terms']
-                            else None for tg in point_tag]
+        cp['point_term'] = [s if s in cp['terms'] else None
+                            for s in self.point_term]
         cp['base_k40'] = np.array([h.myof.data['k_4_0'] for h in hs_objs_list])
         cp['base_k41'] = np.array([h.myof.data['k_4_1'] for h in hs_objs_list])
+
+    # -----------------------------------------------------------------
+    # territory outputs (J4, rates, active stress) -> data.csv
+    # -----------------------------------------------------------------
+
+    def setup_territory_outputs(self, flag):
+        """Create the per-territory columns.  They have to exist now, before
+        LV_simulation builds its data structure, to be written at all."""
+        self.terr_out = None
+        flag = _scalar(flag)
+        if not isinstance(flag, bool):
+            raise ValueError('territory_outputs must be true or false, e.g. '
+                             '"territory_outputs": [false]')
+        if not flag:
+            if _is_root(self.parent):
+                print("perfusion: territory outputs OFF")
+            return
+        extra = EXTRA_LV_TERMINALS.get(self.subtree, {})
+        terms = [t for t in self.tree.terminals if t not in extra]
+        self.terr_out = dict(terms=terms, point_idx=None)
+        for t in terms:
+            for f in TERRITORY_FIELDS:
+                self.data[f + '_' + t] = 0.0
+        if _is_root(self.parent):
+            print("perfusion: territory outputs ON  (%s per LV territory, "
+                  "volume-weighted)" % ", ".join(TERRITORY_FIELDS))
+
+    def territory_output_step(self, mesh_model):
+        """Every timestep, after MyoSim and the FE solve: territory means of
+        J_4, the rates in use and active stress.  Collective under MPI --
+        every rank calls it every step, so the Allreduce always matches."""
+        to = self.terr_out
+        hs_list = getattr(self.parent, 'hs_objs_list', None)
+        if to is None or hs_list is None or mesh_model is None:
+            return
+        terms = to['terms']
+        if to['point_idx'] is None:
+            self.build_point_map(hs_list, mesh_model)
+            idx = dict((s, i) for i, s in enumerate(terms))
+            to['point_idx'] = np.array([idx.get(s, -1)
+                                        for s in self.point_term], dtype=int)
+
+        pidx = to['point_idx']
+        pw = self.point_w
+        cb = getattr(self.parent, 'cb_stress_list', None)
+        if cb is not None and len(cb) != len(hs_list):
+            cb = None
+
+        # rows: weight, J4, k_4_0, k_4_1, k_1, active stress
+        acc = np.zeros((6, len(terms)))
+        for j, h in enumerate(hs_list):
+            i = pidx[j]
+            if i < 0:
+                continue
+            w = pw[j]
+            md = h.myof.data
+            acc[0, i] += w
+            fl = getattr(h.myof, 'fluxes', None)
+            if fl is not None:
+                acc[1, i] += w * float(np.sum(fl['J_4']))
+            acc[2, i] += w * float(md['k_4_0'])
+            acc[3, i] += w * float(md['k_4_1'])
+            acc[4, i] += w * float(md.get('k_1', np.nan))
+            if cb is not None:
+                acc[5, i] += w * float(cb[j])
+
+        comm = getattr(self.parent, 'comm', None)
+        if comm is not None and comm.Get_size() > 1:
+            from mpi4py import MPI
+            total = np.zeros_like(acc)
+            comm.Allreduce(acc, total, op=MPI.SUM)
+            acc = total
+
+        for i, s in enumerate(terms):
+            W = acc[0, i]
+            if W <= 0.0:
+                continue
+            for r, f in enumerate(TERRITORY_FIELDS):
+                self.data[f + '_' + s] = acc[r + 1, i] / W
 
     def coupling_step(self, q, time_step, t, mesh_model):
         """Run by implement_time_step every step; LV_simulation.py is not
@@ -881,6 +1003,8 @@ class perfusion(object):
 
         if self.coupling is not None:
             self.coupling_step(q, time_step, t, mesh_model)
+        if self.terr_out is not None:
+            self.territory_output_step(mesh_model)
 
         seg = self.tree.flows(self.P, pressure_arteries, P_IMP)
         for s in self.tree.names:

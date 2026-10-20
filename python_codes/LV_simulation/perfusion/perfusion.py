@@ -83,7 +83,7 @@ import numpy as np
 from dolfin import assemble
 
 from .coronary_rc import (CoronaryRC, SUBTREES, EXTRA_LV_TERMINALS,
-                          TERMINAL_RESISTANCE_PHYSIO)
+                          TERMINAL_RESISTANCE_PHYSIO, narrowing_for_flow)
 
 # The AHA segmentation, its geometry, and the segment -> territory map all come
 # from dependencies/aha_segmentation.py.  Nothing regional is defined in this
@@ -132,10 +132,14 @@ except (ImportError, ValueError):
 #     "detachment_coupling": [{"c": 0.5, "n_tau": 3, "t_start_s": 5}]
 # Leave it out and the coupling is off: nothing in MyoSim is touched.
 #
-# Two ways to set how much perfusion a territory gets:
-#   1. "stenosis": [{"LAD": 80}] -- narrow a vessel; the coronary tree then
-#      decides each territory's flow, and p_i is MEASURED from it.
-#   2. "p_prescribed": {"LAD1": 0.0, "LAD3": 0.5} inside detachment_coupling
+# Setting how much perfusion a vessel gets:
+#   1. "perfusion_percent": [{"LAD": 20}] -- THE SIMPLE WAY.  LAD carries 20%
+#      of its normal flow (100 = healthy).  The code finds the narrowing that
+#      gives this in the healthy heart and applies it; p_i is then MEASURED
+#      from the coronary tree, so flow still answers to the heart.
+#   2. "stenosis": [{"LAD": 80}] -- the same narrowing given directly as
+#      percent AREA lost (80 area -> about 89% flow).
+#   3. "p_prescribed": {"LAD1": 0.0, "LAD3": 0.5} inside detachment_coupling
 #      -- fix p_i directly (0 = no flow, 1 = normal).  Named territories use
 #      this value instead of the measured one; the others stay measured.
 #      The coronary tree still runs and its flows are still written, but
@@ -167,9 +171,13 @@ COUPLING_KEYS = ('c', 'n_tau', 't_start_s', 'q_ref', 'p_prescribed')
 #     active_stress_<terr>  cross-bridge (active) stress along the fibre, Pa --
 #                           LV_simulation's cb_stress_list, so one timestep old
 # Each is the volume-weighted mean over the territory's integration points
-# (reference cell volumes), summed over all MPI ranks.  On by default;
-#     "territory_outputs": [false]
-# inside "perfusion" turns them off.
+# (reference cell volumes), summed over all MPI ranks.  OFF unless asked for,
+# inside "perfusion" -- pick the ones you want:
+#     "territory_outputs": [{"J4": true, "k_4_0": true, "k_4_1": true,
+#                            "k_1": true, "active_stress": true}]
+# Fields left out (or false) are not saved; [true] saves all five; leaving
+# the key out saves none.  k_f_<terr> and perfusion_p_<terr> are not part of
+# this: they are always saved while the detachment coupling is on.
 TERRITORY_FIELDS = ('J4', 'k_4_0', 'k_4_1', 'k_1', 'active_stress')
 
 
@@ -248,6 +256,15 @@ class perfusion(object):
         if not isinstance(self.stenosis, dict):
             raise ValueError('stenosis must look like "stenosis": [{"LMCA": 80}]')
 
+        # Perfusion: {vessel: percent of its healthy flow}.  The simple way.
+        #     "perfusion_percent": [{"LAD": 20}]   LAD carries 20% of normal
+        # Turned into the narrowing that gives that flow in the healthy heart
+        # (coronary_rc.narrowing_for_flow), then applied like a stenosis.
+        self.perfusion_percent = self.model.get('perfusion_percent', {}) or {}
+        if not isinstance(self.perfusion_percent, dict):
+            raise ValueError('perfusion_percent must look like '
+                             '"perfusion_percent": [{"LAD": 20}]')
+
         subtree = self.model.get('subtree', 'full')
         if subtree not in SUBTREES:
             raise ValueError("unknown coronary subtree '%s'; options are %s"
@@ -297,10 +314,28 @@ class perfusion(object):
         # known before create_data_structure runs.  The real one is built on
         # the first timestep.
         self.time_step = None
+        self.narrowing_from_percent = {}
+        if self.perfusion_percent:
+            self.narrowing_from_percent = narrowing_for_flow(
+                subtree, self.perfusion_percent,
+                terminal_resistance=self.terminal_resistance,
+                inertance=self.inertance, fixed_stenosis=self.stenosis)
+            merged = dict(self.stenosis)
+            merged.update(dict((s, a) for s, a in
+                               self.narrowing_from_percent.items() if a > 0.0))
+            self.stenosis = merged
         self.tree = CoronaryRC(subtree, 1.0,
                                terminal_resistance=self.terminal_resistance,
                                inertance=self.inertance,
                                stenosis=self.stenosis)
+
+        if _is_root(self.parent) and self.perfusion_percent:
+            print("perfusion: perfusion_percent (share of healthy flow)")
+            for name in sorted(self.perfusion_percent):
+                print("    %-6s %5.1f%% of normal flow  ->  vessel narrowed "
+                      "%.2f%% of its area"
+                      % (name, float(self.perfusion_percent[name]),
+                         self.narrowing_from_percent[name]))
 
         if not _is_root(self.parent):
             pass
@@ -357,7 +392,7 @@ class perfusion(object):
         self.point_w = None
 
         self.setup_coupling(self.model.get('detachment_coupling', None))
-        self.setup_territory_outputs(self.model.get('territory_outputs', True))
+        self.setup_territory_outputs(self.model.get('territory_outputs', None))
 
     # -----------------------------------------------------------------
     # setup
@@ -659,27 +694,48 @@ class perfusion(object):
     # territory outputs (J4, rates, active stress) -> data.csv
     # -----------------------------------------------------------------
 
-    def setup_territory_outputs(self, flag):
-        """Create the per-territory columns.  They have to exist now, before
-        LV_simulation builds its data structure, to be written at all."""
+    def setup_territory_outputs(self, spec):
+        """Read "territory_outputs" and create the chosen columns.  They have
+        to exist now, before LV_simulation builds its data structure, to be
+        written at all.
+
+        spec is None (left out: save nothing), true / false (all or nothing),
+        or a dict naming each field true or false.
+        """
         self.terr_out = None
-        flag = _scalar(flag)
-        if not isinstance(flag, bool):
-            raise ValueError('territory_outputs must be true or false, e.g. '
-                             '"territory_outputs": [false]')
-        if not flag:
+        usage = ('territory_outputs must look like "territory_outputs": '
+                 '[{"J4": true, "active_stress": true}] (fields %s), or '
+                 '[true] for all of them' % ", ".join(TERRITORY_FIELDS))
+        if spec is None:
+            fields = []
+        elif isinstance(spec, bool):
+            fields = list(TERRITORY_FIELDS) if spec else []
+        elif isinstance(spec, dict):
+            bad = [k for k in spec if k not in TERRITORY_FIELDS]
+            if bad:
+                raise ValueError("territory_outputs: unknown field(s) %s.  %s"
+                                 % (sorted(bad), usage))
+            for k, v in spec.items():
+                if not isinstance(_scalar(v), bool):
+                    raise ValueError("territory_outputs: %s must be true or "
+                                     "false.  %s" % (k, usage))
+            fields = [f for f in TERRITORY_FIELDS if _scalar(spec.get(f, False))]
+        else:
+            raise ValueError(usage)
+
+        if not fields:
             if _is_root(self.parent):
                 print("perfusion: territory outputs OFF")
             return
         extra = EXTRA_LV_TERMINALS.get(self.subtree, {})
         terms = [t for t in self.tree.terminals if t not in extra]
-        self.terr_out = dict(terms=terms, point_idx=None)
+        self.terr_out = dict(terms=terms, fields=fields, point_idx=None)
         for t in terms:
-            for f in TERRITORY_FIELDS:
+            for f in fields:
                 self.data[f + '_' + t] = 0.0
         if _is_root(self.parent):
             print("perfusion: territory outputs ON  (%s per LV territory, "
-                  "volume-weighted)" % ", ".join(TERRITORY_FIELDS))
+                  "volume-weighted)" % ", ".join(fields))
 
     def territory_output_step(self, mesh_model):
         """Every timestep, after MyoSim and the FE solve: territory means of
@@ -732,7 +788,8 @@ class perfusion(object):
             if W <= 0.0:
                 continue
             for r, f in enumerate(TERRITORY_FIELDS):
-                self.data[f + '_' + s] = acc[r + 1, i] / W
+                if f in to['fields']:
+                    self.data[f + '_' + s] = acc[r + 1, i] / W
 
     def coupling_step(self, q, time_step, t, mesh_model):
         """Run by implement_time_step every step; LV_simulation.py is not

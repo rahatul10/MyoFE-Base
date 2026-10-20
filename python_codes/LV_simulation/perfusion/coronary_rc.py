@@ -473,6 +473,95 @@ def apply_stenosis(segments, stenosis):
     return applied
 
 
+# Beat-mean aortic pressure and IMP (mmHg) of the healthy run B baseline,
+# data_8.csv, t = 65.9-79.2 s.  The tree is linear, so its beat-mean flows
+# are exactly its steady solution at these mean pressures (checked: every
+# territory within 0.01% of the run's own mean flow).  Used only to turn
+# "perfusion_percent" into a narrowing.  Re-measure with Q_ref if the heart
+# or the terminal resistances change.
+REF_MEAN_P_AO = 90.688
+REF_MEAN_IMP = {
+    "LAD1": 16.934, "LAD3": 15.756, "LAD4": 15.131,
+    "MARG1": 17.338, "MARG2": 16.533, "MARG3": 14.808,
+    "LCX3": 16.601, "PDA": 17.224, "PLA": 5.488,
+}
+
+
+def narrowing_for_flow(subtree, percent_flow, terminal_resistance=None,
+                       inertance=False, fixed_stenosis=None,
+                       P_AO=None, P_IMP=None):
+    """Turn {segment: percent of healthy flow} into {segment: percent AREA
+    reduction}, the input apply_stenosis takes.
+
+    "LAD": 20 means the LAD carries 20% of the flow it carries in the
+    healthy heart.  The narrowing is found once, against the healthy heart
+    (REF_MEAN_P_AO, REF_MEAN_IMP): it is a fixed narrowing, so once the
+    simulation runs, flow still answers to the heart -- that is the feedback
+    under study.  Several targets interact through shared vessels (LAD and
+    LCX both hang off LMCA), so they are solved together.
+    """
+    fixed = dict(fixed_stenosis or {})
+    if P_AO is None:
+        P_AO = REF_MEAN_P_AO
+    if P_IMP is None:
+        P_IMP = REF_MEAN_IMP
+
+    def flows(area):
+        sten = dict(fixed)
+        sten.update(dict((s, a) for s, a in area.items() if a > 0.0))
+        tree = CoronaryRC(subtree, 1.0, terminal_resistance=terminal_resistance,
+                          inertance=inertance, stenosis=sten)
+        missing = [t for t in tree.terminals if t not in P_IMP]
+        if missing:
+            raise ValueError("perfusion_percent: no reference IMP for %s; it "
+                             "is only set up for the full tree" % missing)
+        P = tree.steady_state(P_AO, P_IMP)
+        return tree.flows(P, P_AO, P_IMP)
+
+    names = flows({}).keys()
+    target = {}
+    for s, v in percent_flow.items():
+        if s not in names:
+            raise ValueError("perfusion_percent on '%s': no such vessel.  "
+                             "Vessels are %s" % (s, sorted(names)))
+        if s in fixed:
+            raise ValueError("'%s' is in both stenosis and perfusion_percent; "
+                             "give it in one only" % s)
+        v = float(v)
+        if not 0.0 < v <= 100.0:
+            raise ValueError("perfusion_percent on %s is %g: give the percent "
+                             "of normal flow, 0 < value <= 100 (100 = healthy; "
+                             "use e.g. 1 for almost none)" % (s, v))
+        if v < 1.0:
+            raise ValueError("perfusion_percent on %s is %g: give a PERCENT, "
+                             "e.g. 20 for 20%%, not 0.2" % (s, v))
+        target[s] = v / 100.0
+
+    q0 = flows({})                       # healthy: no narrowing anywhere
+    area = dict((s, 0.0) for s in target)
+    for sweep in range(200):
+        for s in sorted(target):
+            if target[s] >= 1.0:
+                area[s] = 0.0
+                continue
+            # flow through s rises with its open fraction beta; bisect log(beta)
+            lo, hi = np.log(1e-8), 0.0
+            for it in range(80):
+                mid = 0.5 * (lo + hi)
+                area[s] = 100.0 * (1.0 - np.exp(mid))
+                if flows(area)[s] / q0[s] > target[s]:
+                    hi = mid
+                else:
+                    lo = mid
+            area[s] = 100.0 * (1.0 - np.exp(0.5 * (lo + hi)))
+        q = flows(area)
+        if all(abs(q[s] / q0[s] - target[s]) < 1e-6 for s in target):
+            break
+    else:
+        raise RuntimeError("perfusion_percent: could not reach %s" % target)
+    return area
+
+
 def terminals_of(subtree):
     """Segment names that end in myocardium for this configuration."""
     segs = _resolve_segments(subtree)

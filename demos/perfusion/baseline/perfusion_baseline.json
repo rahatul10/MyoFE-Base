@@ -13,7 +13,7 @@
                         300
                     ],
                     "total_change": [
-                        180
+                        170
                     ],
                     "t_start_s": [
                         200
@@ -37,7 +37,7 @@
             ]
         },
         "no_of_time_steps": [
-            80000
+            40000
         ],
         "baroreflex": {
             "activations": [
@@ -46,7 +46,7 @@
                         800
                     ],
                     "t_start_s": [
-                        15
+                        5
                     ]
                 }
             ]
@@ -74,7 +74,7 @@
                     200
                 ],
                 "k_on": [
-                    173500000.0
+                    171950000.0
                 ],
                 "x_ps": [
                     5.2
@@ -101,7 +101,7 @@
                     0.001
                 ],
                 "k_1": [
-                    5.5
+                    5.807
                 ],
                 "ext_passive_exp_L": [
                     70
@@ -186,7 +186,7 @@
                     0.01
                 ],
                 "k_act": [
-                    0.0830
+                    0.08763
                 ],
                 "implementation": {
                     "kinetic_scheme": [
@@ -197,7 +197,7 @@
                     0.0006
                 ],
                 "k_serca": [
-                    7.866
+                    8.305
                 ],
                 "Ca_content": [
                     0.001
@@ -281,7 +281,7 @@
                         "arterioles"
                     ],
                     "resistance": [
-                        787
+                        796.2
                     ]
                 },
                 {
@@ -317,7 +317,7 @@
                         2.0
                     ],
                     "compliance": [
-                        0.07
+                        0.06907
                     ],
                     "name": [
                         "veins"
@@ -514,7 +514,24 @@
                 4
             ]
         },
-        "perfusion": {}
+        "perfusion": {
+            "perfusion_percent": [
+                {
+                    "LAD": 100,
+                    "LCX": 100,
+                    "RCA": 100
+                }
+            ],
+            "territory_outputs": [
+                {
+                    "J4": true,
+                    "k_4_0": true,
+                    "k_4_1": true,
+                    "k_1": true,
+                    "active_stress": true
+                }
+            ]
+        }
     },
     "heart_rate": {
         "t_active_period": [
@@ -524,7 +541,7 @@
             0.1
         ],
         "t_quiescent_period": [
-            0.92
+            0.8834
         ]
     },
     "output_handler": {
@@ -549,13 +566,13 @@
                     false
                 ],
                 "rel_tol": [
-                    1e-08
+                    0.0001
                 ],
                 "max_iter": [
                     100
                 ],
                 "abs_tol": [
-                    1e-08
+                    0.0001
                 ]
             }
         },

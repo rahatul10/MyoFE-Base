@@ -327,7 +327,8 @@ class perfusion(object):
         self.tree = CoronaryRC(subtree, 1.0,
                                terminal_resistance=self.terminal_resistance,
                                inertance=self.inertance,
-                               stenosis=self.stenosis)
+                               stenosis=self.stenosis,
+                               check_units=not self.narrowing_from_percent)
 
         if _is_root(self.parent) and self.perfusion_percent:
             print("perfusion: perfusion_percent (share of healthy flow)")
@@ -406,7 +407,8 @@ class perfusion(object):
         self.tree = CoronaryRC(self.subtree, time_step,
                                terminal_resistance=self.terminal_resistance,
                                inertance=self.inertance,
-                               stenosis=self.stenosis)
+                               stenosis=self.stenosis,
+                               check_units=not self.narrowing_from_percent)
         self.P = self.tree.steady_state(self.initial_pressure_arteries,
                                         self.return_prescribed_imp(0.0))
 

@@ -37,7 +37,7 @@
             ]
         },
         "no_of_time_steps": [
-            60000
+            80000
         ],
         "baroreflex": {
             "activations": [
@@ -545,7 +545,12 @@
         ]
     },
     "output_handler": {
-        "mesh_object_to_save": [],
+        "mesh_object_to_save": [
+            "displacement",
+            "active_stress",
+            "hs_length",
+            "total_stress"
+        ],
         "mesh_output_path": [
             "/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling_baseline/sim_output/"
         ],
@@ -556,7 +561,7 @@
             "/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling_baseline/sim_output/data.csv"
         ],
         "frequency_n": [
-            10
+            1
         ]
     },
     "mesh": {
@@ -566,13 +571,13 @@
                     false
                 ],
                 "rel_tol": [
-                    1e-04
+                    1e-06
                 ],
                 "max_iter": [
                     100
                 ],
                 "abs_tol": [
-                    1e-04
+                    1e-06
                 ]
             }
         },

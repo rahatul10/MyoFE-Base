@@ -431,7 +431,7 @@ def _resolve_segments(subtree):
     return out
 
 
-def apply_stenosis(segments, stenosis):
+def apply_stenosis(segments, stenosis, check_units=True):
     """Narrow segments in place, following Wang et al. Eq. 1.
 
     stenosis : {segment name: percent AREA reduction}, e.g. {"LMCA": 80}.
@@ -458,7 +458,7 @@ def apply_stenosis(segments, stenosis):
             raise ValueError(
                 "stenosis on %s is %g%%: give percent area reduction, "
                 "0 <= value < 100" % (name, pct))
-        if 0.0 < pct < 1.0:
+        if check_units and 0.0 < pct < 1.0:
             raise ValueError(
                 "stenosis on %s is %g: give PERCENT area reduction, e.g. 80 "
                 "for 80%%, not 0.8" % (name, pct))
@@ -510,7 +510,7 @@ def narrowing_for_flow(subtree, percent_flow, terminal_resistance=None,
         sten = dict(fixed)
         sten.update(dict((s, a) for s, a in area.items() if a > 0.0))
         tree = CoronaryRC(subtree, 1.0, terminal_resistance=terminal_resistance,
-                          inertance=inertance, stenosis=sten)
+                          inertance=inertance, stenosis=sten, check_units=False)
         missing = [t for t in tree.terminals if t not in P_IMP]
         if missing:
             raise ValueError("perfusion_percent: no reference IMP for %s; it "
@@ -518,6 +518,7 @@ def narrowing_for_flow(subtree, percent_flow, terminal_resistance=None,
         P = tree.steady_state(P_AO, P_IMP)
         return tree.flows(P, P_AO, P_IMP)
 
+    apply_stenosis(_resolve_segments(subtree), fixed)   # check the user's own
     names = flows({}).keys()
     target = {}
     for s, v in percent_flow.items():
@@ -540,6 +541,7 @@ def narrowing_for_flow(subtree, percent_flow, terminal_resistance=None,
     q0 = flows({})                       # healthy: no narrowing anywhere
     area = dict((s, 0.0) for s in target)
     for sweep in range(200):
+        before = dict(area)
         for s in sorted(target):
             if target[s] >= 1.0:
                 area[s] = 0.0
@@ -556,10 +558,15 @@ def narrowing_for_flow(subtree, percent_flow, terminal_resistance=None,
             area[s] = 100.0 * (1.0 - np.exp(0.5 * (lo + hi)))
         q = flows(area)
         if all(abs(q[s] / q0[s] - target[s]) < 1e-6 for s in target):
-            break
-    else:
-        raise RuntimeError("perfusion_percent: could not reach %s" % target)
-    return area
+            return area
+        if all(abs(area[s] - before[s]) < 1e-9 for s in target):
+            break                        # stuck: the targets contradict each other
+    raise ValueError(
+        "perfusion_percent %s cannot all hold at once: the closest is %s.  "
+        "A vessel downstream of another already limits its flow (e.g. LAD3 at "
+        "20%% caps LAD2), so a parent cannot get MORE than its children allow."
+        % (dict((s, 100.0 * target[s]) for s in sorted(target)),
+           dict((s, round(100.0 * q[s] / q0[s], 1)) for s in sorted(target))))
 
 
 def terminals_of(subtree):
@@ -690,7 +697,7 @@ class CoronaryRC(object):
     """
 
     def __init__(self, subtree, dt, terminal_resistance=None,
-                 inertance=False, stenosis=None):
+                 inertance=False, stenosis=None, check_units=True):
         """subtree is a key of SUBTREES.  terminal_resistance may be None (no
         downstream resistance), a single number applied to every territory, or
         a dict keyed by terminal segment name; omitted, the calibrated table
@@ -700,7 +707,10 @@ class CoronaryRC(object):
         self.inertance = bool(inertance)
         self.segments = _resolve_segments(subtree)
         # Narrowed segments, if any: {name: percent area reduction}.
-        self.stenosis = apply_stenosis(self.segments, stenosis or {})
+        # check_units=False only for narrowings the code computed itself
+        # (perfusion_percent), which can legitimately be below 1%.
+        self.stenosis = apply_stenosis(self.segments, stenosis or {},
+                                       check_units=check_units)
         self.names = list(SUBTREES[subtree])
         self.dt = dt
 

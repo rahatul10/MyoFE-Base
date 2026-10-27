@@ -37,7 +37,7 @@
             ]
         },
         "no_of_time_steps": [
-            60000
+            80000
         ],
         "baroreflex": {
             "activations": [
@@ -517,7 +517,7 @@
         "perfusion": {
             "perfusion_percent": [
                 {
-                    "LAD": 20
+                    "LAD": 1
                 }
             ],
             "detachment_coupling": [
@@ -550,18 +550,23 @@
         ]
     },
     "output_handler": {
-        "mesh_object_to_save": [],
+        "mesh_object_to_save": [
+            "displacement",
+            "active_stress",
+            "hs_length",
+            "total_stress"
+        ],
         "mesh_output_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling/sim_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling_LAD/sim_output/"
         ],
         "dumping_spatial_in_average": [
             false
         ],
         "output_data_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling/sim_output/data.csv"
+            "/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling_LAD/sim_output/data.csv"
         ],
         "frequency_n": [
-            10
+            1
         ]
     },
     "mesh": {
@@ -571,13 +576,13 @@
                     false
                 ],
                 "rel_tol": [
-                    0.0001
+                    1e-06
                 ],
                 "max_iter": [
                     100
                 ],
                 "abs_tol": [
-                    0.0001
+                    1e-06
                 ]
             }
         },

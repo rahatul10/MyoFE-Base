@@ -560,7 +560,7 @@
             "/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling_MARG/sim_output/"
         ],
         "dumping_spatial_in_average": [
-            false
+            true
         ],
         "output_data_path": [
             "/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling_MARG/sim_output/data.csv"

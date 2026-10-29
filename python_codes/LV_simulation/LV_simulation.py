@@ -2,7 +2,7 @@
 """
 
 
-@author: Mehri
+@author: Rahat
 """
 
 from ast import operator
@@ -592,6 +592,17 @@ class LV_simulation():
             spatial_data = pd.DataFrame()
             data_field.append('time')
             data_field = data_field + ['Sff','sff_mean','alpha_f','total_stress_spatial']
+
+            # Remove repeated field names. 'hs_length', 'k_1' and
+            # 'cb_number_density' appear both in the default hs/myof keys and
+            # in spatial_extra. Duplicate column names make the old pandas in
+            # the container crash on the first .at[] write
+            # ('BlockManager' object has no attribute 'T').
+            unique_fields = []
+            for f in data_field:
+                if f not in unique_fields:
+                    unique_fields.append(f)
+            data_field = unique_fields
 
             for f in data_field:
                 s = pd.Series(data=np.zeros(rows), name=f)

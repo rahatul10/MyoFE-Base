@@ -2,7 +2,7 @@
 """
 
 
-@author: Rahat
+@author: Mehri
 """
 
 from ast import operator
@@ -356,12 +356,9 @@ class LV_simulation():
 
         """ If required, create the coronary perfusion model """
         if ('perfusion' in instruction_data['model']):
-            # p[0] is the aorta compartment.  The coronary ostia sit in the
-            # aortic root, upstream of the systemic arterial resistance, so
-            # the inlet is aortic and not arterial pressure.
             self.perf = perf.perfusion(instruction_data['model']['perfusion'],
                                        self,
-                                       self.circ.data['p'][0])
+                                       self.circ.data['pressure_arteries'])
         else:
             self.perf = []
         # If required, create the growth object
@@ -593,17 +590,6 @@ class LV_simulation():
             data_field.append('time')
             data_field = data_field + ['Sff','sff_mean','alpha_f','total_stress_spatial']
 
-            # Remove repeated field names. 'hs_length', 'k_1' and
-            # 'cb_number_density' appear both in the default hs/myof keys and
-            # in spatial_extra. Duplicate column names make the old pandas in
-            # the container crash on the first .at[] write
-            # ('BlockManager' object has no attribute 'T').
-            unique_fields = []
-            for f in data_field:
-                if f not in unique_fields:
-                    unique_fields.append(f)
-            data_field = unique_fields
-
             for f in data_field:
                 s = pd.Series(data=np.zeros(rows), name=f)
                 spatial_data = pd.concat([spatial_data, s], axis=1)
@@ -646,6 +632,37 @@ class LV_simulation():
             if 'frequency_n' in output_struct:
                 self.dumping_data_frequency = \
                     output_struct['frequency_n'][0]
+
+        # Saving window, set in output_handler (both optional):
+        #   "save_last_n_cycles": [4]   data.csv rows and mesh_object_to_save
+        #                               fields only for the last 4 cardiac
+        #                               cycles.  [0] or left out: every cycle,
+        #                               exactly as before.
+        #   "save_spatial_data": [false] skip the per-Gauss-point collection
+        #                               done at every dump (about a dozen
+        #                               projections).  handle_output never
+        #                               writes it to disk.  Left out: true,
+        #                               as before.
+        self.save_last_n_cycles = 0
+        self.save_spatial_data = True
+        if output_struct:
+            if 'save_last_n_cycles' in output_struct:
+                self.save_last_n_cycles = \
+                    int(output_struct['save_last_n_cycles'][0])
+                if self.save_last_n_cycles < 0:
+                    raise ValueError('save_last_n_cycles must be >= 0 '
+                                     '(0 = save every cycle)')
+            if 'save_spatial_data' in output_struct:
+                self.save_spatial_data = \
+                    bool(output_struct['save_spatial_data'][0])
+        self.saving_on = (self.save_last_n_cycles == 0)
+        if self.comm.Get_rank() == 0:
+            if self.saving_on:
+                print 'Saving every cycle'
+            else:
+                print 'Saving only the last %d cycles' % self.save_last_n_cycles
+            if not self.save_spatial_data:
+                print 'Per-Gauss-point spatial data collection is OFF'
 
 
         # Define simulation data holders for storing 
@@ -1133,15 +1150,11 @@ class LV_simulation():
 
         # Advance the coronary tree.  This must stay AFTER solvenonlinear()
         # and after the compartment pressures are recomputed above: it reads
-        # the stress state and the aortic pressure, and both are one timestep
+        # the stress state and pressure_aorta, and both are one timestep
         # stale anywhere earlier in this method.
-        #
-        # Use p[0], not pressure_aorta: p[] is recomputed in the loop just
-        # above, whereas pressure_aorta is only refreshed by updata_data()
-        # much later in the timestep, so it lags by one step (~2 mmHg).
         if (self.perf):
             self.perf.implement_time_step(
-                self.circ.data['p'][0],
+                self.circ.data['pressure_aorta'],
                 time_step,
                 self.data['time'],
                 mesh_model=self.mesh.model)
@@ -1972,7 +1985,26 @@ class LV_simulation():
 
 
         self.update_data(time_step)
-        if self.t_counter%self.dumping_data_frequency == 0:
+
+        # Saving window ("save_last_n_cycles").  It opens at the first beat
+        # that starts with fewer than (n + 2) cycle lengths left: the beat it
+        # opens on loses at most its first dump interval, and n whole cycles
+        # follow.  Every rank holds the same heart-rate state, so every rank
+        # opens it on the same step -- the mesh writes below are collective.
+        if (not self.saving_on) and new_beat:
+            t_end = self.prot.data['no_of_time_steps'] * \
+                self.prot.data['time_step']
+            period = self.hr.data['t_active_period'] + \
+                self.hr.data['t_quiescent_period']
+            if (t_end - self.data['time']) < \
+                    (self.save_last_n_cycles + 2) * period:
+                self.saving_on = True
+                if self.comm.Get_rank() == 0:
+                    print 'Saving window opens at t = %.3f s (cycle %.3f s)' \
+                        % (self.data['time'], period)
+
+        if self.saving_on and \
+                self.t_counter%self.dumping_data_frequency == 0:
             
             if self.comm.Get_rank() == 0:
                 
@@ -1980,7 +2012,8 @@ class LV_simulation():
                 self.write_complete_data_to_sim_data()
 
             # Now update local spatial data for each core
-            self.write_complete_data_to_spatial_sim_data(self.comm.Get_rank())
+            if self.save_spatial_data:
+                self.write_complete_data_to_spatial_sim_data(self.comm.Get_rank())
 
             self.write_counter = self.write_counter + 1
 
@@ -2668,6 +2701,11 @@ class LV_simulation():
             if self.output_data_str:
                 # Save main simulation data to data.csv
                 output_sim_data = pd.DataFrame(data=self.sim_data)
+                # Only the rows written so far: the table is pre-sized for
+                # every dump, so a saving window (or a write part-way through
+                # a run) would otherwise leave rows of zeros.  At the end of
+                # a full-save run this is every row, as before.
+                output_sim_data = output_sim_data.iloc[:self.write_counter]
                 output_sim_data.to_csv(self.output_data_str)
         return
 

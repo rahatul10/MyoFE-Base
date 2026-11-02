@@ -96,7 +96,8 @@ except (ImportError, ValueError):
 
 
 # ---------------------------------------------------------------------------
-# Perfusion -> cross-bridge detachment coupling
+# Perfusion -> cross-bridge coupling (detachment version described first;
+# the attachment version, "attachment_coupling", scales k_3 instead)
 # ---------------------------------------------------------------------------
 # Hypothesis: no blood -> no ATP -> no detachment.  Myosin must bind ATP to
 # release actin at every strain, and MyoSim lumps that step into its
@@ -128,9 +129,13 @@ except (ImportError, ValueError):
 #
 # Everything runs inside this module: LV_simulation.py is not changed.
 #
-# JSON (inside "perfusion"; every key optional):
+# JSON (inside "perfusion"; every key optional), ONE of:
+#     "attachment_coupling": [{"c": 0.0, "n_tau": 3, "t_start_s": 5}]
+#         k_f scales k_3 instead: less flow -> fewer heads attach -> less
+#         force.  k_f = c + (1 - c) p_i with c = 0 gives p = 1% -> ~0 force.
 #     "detachment_coupling": [{"c": 0.5, "n_tau": 3, "t_start_s": 5}]
-# Leave it out and the coupling is off: nothing in MyoSim is touched.
+#         k_f scales k_4,0 and k_4,1 as described above.
+# Leave both out and the coupling is off: nothing in MyoSim is touched.
 #
 # Setting how much perfusion a vessel gets:
 #   1. "perfusion_percent": [{"LAD": 20}] -- THE SIMPLE WAY.  LAD carries 20%
@@ -139,7 +144,7 @@ except (ImportError, ValueError):
 #      from the coronary tree, so flow still answers to the heart.
 #   2. "stenosis": [{"LAD": 80}] -- the same narrowing given directly as
 #      percent AREA lost (80 area -> about 89% flow).
-#   3. "p_prescribed": {"LAD1": 0.0, "LAD3": 0.5} inside detachment_coupling
+#   3. "p_prescribed": {"LAD1": 0.0, "LAD3": 0.5} inside either coupling
 #      -- fix p_i directly (0 = no flow, 1 = normal).  Named territories use
 #      this value instead of the measured one; the others stay measured.
 #      The coronary tree still runs and its flows are still written, but
@@ -157,9 +162,30 @@ DEFAULT_Q_REF = {
 
 COUPLING_KEYS = ('c', 'n_tau', 't_start_s', 'q_ref', 'p_prescribed')
 
+# The two couplings: which MyoSim rates k_f multiplies, and the default floor c.
+#   "attachment_coupling"  k_3            -> J_3 = r_3 M_DRX (n_on - n_bound)
+#                          less flow, fewer heads attach, LESS force; c = 0
+#                          by default, so p = 0 means no attachment at all.
+#   "detachment_coupling"  k_4,0, k_4,1   -> J_4 = r_4 M_FG
+#                          less flow, heads stay attached, MORE force and
+#                          slower relaxation; c = 0.5 by default (below
+#                          k_f ~ 0.4 the muscle stops relaxing).
+# Use one at a time.
+COUPLING_TYPES = {
+    'attachment_coupling': dict(rates=('k_3',), c=0.0, what='attachment'),
+    'detachment_coupling': dict(rates=('k_4_0', 'k_4_1'), c=0.5,
+                                what='detachment'),
+}
+
 # ---------------------------------------------------------------------------
 # Territory outputs: per LV territory, every timestep, into data.csv
 # ---------------------------------------------------------------------------
+#     J3_<terr>             mean cross-bridge attachment flux
+#                               J_3,i = sum_x r_3(x) M_DRX (n_on - n_bound),
+#                           fraction of myosin heads attaching per second (1/s),
+#                           from kinetics.py's own fluxes['J_3'], so it follows
+#                           k_f under the attachment coupling.
+#     k_3_<terr>            attachment rate k_3 in use (1/s) = k_f * base
 #     J4_<terr>             mean cross-bridge detachment flux
 #                               J_4,i = sum_x min(max_rate, k_f,i k_det(x)) M_FG(x)
 #                           fraction of myosin heads detaching per second (1/s).
@@ -173,12 +199,13 @@ COUPLING_KEYS = ('c', 'n_tau', 't_start_s', 'q_ref', 'p_prescribed')
 # Each is the volume-weighted mean over the territory's integration points
 # (reference cell volumes), summed over all MPI ranks.  OFF unless asked for,
 # inside "perfusion" -- pick the ones you want:
-#     "territory_outputs": [{"J4": true, "k_4_0": true, "k_4_1": true,
-#                            "k_1": true, "active_stress": true}]
-# Fields left out (or false) are not saved; [true] saves all five; leaving
+#     "territory_outputs": [{"J3": true, "J4": true, "k_3": true,
+#                            "k_4_0": true, "k_4_1": true, "k_1": true,
+#                            "active_stress": true}]
+# Fields left out (or false) are not saved; [true] saves all seven; leaving
 # the key out saves none.  k_f_<terr> and perfusion_p_<terr> are not part of
-# this: they are always saved while the detachment coupling is on.
-TERRITORY_FIELDS = ('J4', 'k_4_0', 'k_4_1', 'k_1', 'active_stress')
+# this: they are always saved while either coupling is on.
+TERRITORY_FIELDS = ('J3', 'J4', 'k_3', 'k_4_0', 'k_4_1', 'k_1', 'active_stress')
 
 
 def _is_root(parent):
@@ -388,11 +415,19 @@ class perfusion(object):
 
         # Territory of every local integration point and its volume weight,
         # built once on the first step (build_point_map).  Shared by the
-        # detachment coupling and the territory outputs.
+        # perfusion coupling and the territory outputs.
         self.point_term = None
         self.point_w = None
 
-        self.setup_coupling(self.model.get('detachment_coupling', None))
+        given = [k for k in COUPLING_TYPES if k in self.model]
+        if len(given) > 1:
+            raise ValueError("perfusion: give attachment_coupling OR "
+                             "detachment_coupling, not both")
+        kind = given[0] if given else 'attachment_coupling'
+        try:
+            self.setup_coupling(self.model.get(kind, None), kind)
+        except ValueError as e:      # messages are worded for detachment
+            raise ValueError(str(e).replace('detachment_coupling', kind))
         self.setup_territory_outputs(self.model.get('territory_outputs', None))
 
     # -----------------------------------------------------------------
@@ -501,7 +536,7 @@ class perfusion(object):
         marker_array = marker.array()
         for i in range(n_cells):
             marker_array[i] = seg_to_tag[segment[i]]
-        # Kept for the detachment coupling, which needs each integration
+        # Kept for the perfusion coupling, which needs each integration
         # point's territory (see coupling_point_map).
         self.cell_tag = np.array(marker_array, dtype=int)
 
@@ -539,30 +574,33 @@ class perfusion(object):
                          100.0 * self.territory_volume[term] / total))
 
     # -----------------------------------------------------------------
-    # perfusion -> cross-bridge detachment coupling
+    # perfusion -> cross-bridge coupling (attachment or detachment)
     # -----------------------------------------------------------------
 
-    def setup_coupling(self, spec):
-        """Parse "detachment_coupling" and create its data columns.
+    def setup_coupling(self, spec, kind='detachment_coupling'):
+        """Parse "attachment_coupling" or "detachment_coupling" and create
+        its data columns.
 
         spec is None (coupling off) or a dict with any of c, n_tau,
-        t_start_s, q_ref.  Unknown keys stop the run, so a typo can never
-        silently leave the coupling at its defaults.
+        t_start_s, q_ref, p_prescribed.  Unknown keys stop the run, so a
+        typo can never silently leave the coupling at its defaults.
         """
         self.coupling = None
+        ctype = COUPLING_TYPES[kind]
         if spec is None:
             if _is_root(self.parent):
-                print("perfusion: detachment coupling OFF")
+                print("perfusion: perfusion -> cross-bridge coupling OFF")
             return
         if not isinstance(spec, dict):
-            raise ValueError('detachment_coupling must look like '
-                             '"detachment_coupling": [{"c": 0.5, "n_tau": 3}]')
+            raise ValueError('%s must look like "%s": [{"c": %g, "n_tau": 3}]'
+                             % (kind, kind, ctype['c']))
         bad = [k for k in spec if k not in COUPLING_KEYS]
         if bad:
-            raise ValueError("detachment_coupling: unknown key(s) %s; allowed "
-                             "keys are %s" % (sorted(bad), list(COUPLING_KEYS)))
+            raise ValueError("%s: unknown key(s) %s; allowed "
+                             "keys are %s" % (kind, sorted(bad),
+                                              list(COUPLING_KEYS)))
 
-        c = float(_scalar(spec.get('c', 0.5)))
+        c = float(_scalar(spec.get('c', ctype['c'])))
         n_tau = float(_scalar(spec.get('n_tau', 3)))
         t_start = float(_scalar(spec.get('t_start_s', 0.0)))
         if not 0.0 <= c <= 1.0:
@@ -624,16 +662,18 @@ class perfusion(object):
             last_t_RR=None,       # heart-rate countdown at the last step
             armed=False,          # True once a whole beat has started
             point_term=None,      # territory of every local integration point
-            base_k40=None, base_k41=None,
+            kind=kind, rates=ctype['rates'], what=ctype['what'],
+            base=None,            # {rate: base value at every local point}
             n_beats=0)
         for t in terms:
             self.data['perfusion_p_' + t] = 1.0
             self.data['k_f_' + t] = 1.0
 
         if _is_root(self.parent):
-            print("perfusion: detachment coupling ON   k_f = %.3g + %.3g p,  "
+            print("perfusion: %s coupling ON   k_f = %.3g + %.3g p  scales %s,  "
                   "n_tau = %g beats,  from t = %g s"
-                  % (c, 1.0 - c, n_tau, t_start))
+                  % (ctype['what'], c, 1.0 - c, " and ".join(ctype['rates']),
+                     n_tau, t_start))
             print("perfusion:   Q_ref (mL/min)  " + "  ".join(
                 "%s %.2f" % (t, q_ref[t]) for t in terms))
             if p_set:
@@ -689,8 +729,8 @@ class perfusion(object):
         cp = self.coupling
         cp['point_term'] = [s if s in cp['terms'] else None
                             for s in self.point_term]
-        cp['base_k40'] = np.array([h.myof.data['k_4_0'] for h in hs_objs_list])
-        cp['base_k41'] = np.array([h.myof.data['k_4_1'] for h in hs_objs_list])
+        cp['base'] = dict((r, np.array([h.myof.data[r] for h in hs_objs_list]))
+                          for r in cp['rates'])
 
     # -----------------------------------------------------------------
     # territory outputs (J4, rates, active stress) -> data.csv
@@ -741,7 +781,7 @@ class perfusion(object):
 
     def territory_output_step(self, mesh_model):
         """Every timestep, after MyoSim and the FE solve: territory means of
-        J_4, the rates in use and active stress.  Collective under MPI --
+        J_3, J_4, the rates in use and active stress.  Collective under MPI --
         every rank calls it every step, so the Allreduce always matches."""
         to = self.terr_out
         hs_list = getattr(self.parent, 'hs_objs_list', None)
@@ -760,8 +800,9 @@ class perfusion(object):
         if cb is not None and len(cb) != len(hs_list):
             cb = None
 
-        # rows: weight, J4, k_4_0, k_4_1, k_1, active stress
-        acc = np.zeros((6, len(terms)))
+        # row 0: weight; then one row per TERRITORY_FIELDS entry, in order
+        # J3, J4, k_3, k_4_0, k_4_1, k_1, active stress
+        acc = np.zeros((1 + len(TERRITORY_FIELDS), len(terms)))
         for j, h in enumerate(hs_list):
             i = pidx[j]
             if i < 0:
@@ -771,12 +812,14 @@ class perfusion(object):
             acc[0, i] += w
             fl = getattr(h.myof, 'fluxes', None)
             if fl is not None:
-                acc[1, i] += w * float(np.sum(fl['J_4']))
-            acc[2, i] += w * float(md['k_4_0'])
-            acc[3, i] += w * float(md['k_4_1'])
-            acc[4, i] += w * float(md.get('k_1', np.nan))
+                acc[1, i] += w * float(np.sum(fl['J_3']))
+                acc[2, i] += w * float(np.sum(fl['J_4']))
+            acc[3, i] += w * float(md['k_3'])
+            acc[4, i] += w * float(md['k_4_0'])
+            acc[5, i] += w * float(md['k_4_1'])
+            acc[6, i] += w * float(md.get('k_1', np.nan))
             if cb is not None:
-                acc[5, i] += w * float(cb[j])
+                acc[7, i] += w * float(cb[j])
 
         comm = getattr(self.parent, 'comm', None)
         if comm is not None and comm.Get_size() > 1:
@@ -812,19 +855,20 @@ class perfusion(object):
         cp['last_t_RR'] = t_rr
 
         if new_beat:
-            self.update_detachment(self.parent.hs_objs_list, mesh_model, t)
+            self.update_rates(self.parent.hs_objs_list, mesh_model, t)
 
         if cp['armed']:
             for s in cp['terms']:
                 cp['vol'][s] += q[s] * time_step
             cp['T'] += time_step
 
-    def update_detachment(self, hs_objs_list, mesh_model, t):
+    def update_rates(self, hs_objs_list, mesh_model, t):
         """Once per beat, from coupling_step.
 
         Closes the beat that just ended: its mean flow per territory gives
         p_i, which moves k_f,i one n_tau-th of the way to c + (1 - c) p_i.
-        Then sets k_4_0 and k_4_1 at every point in each territory.  Every
+        Then sets the coupled rates (k_3, or k_4_0 and k_4_1) at every point
+        in each territory.  Every
         rank runs the same coronary tree on the same global IMP, so every
         rank computes the same k_f and no communication is needed.
         """
@@ -832,9 +876,9 @@ class perfusion(object):
         if cp is None or t < cp['t_start']:
             return
         if mesh_model is None:
-            raise ValueError("detachment coupling needs the mesh to find each "
+            raise ValueError("the %s coupling needs the mesh to find each "
                              "point's territory; imp_source 'prescribed' "
-                             "does not provide it")
+                             "does not provide it" % cp['what'])
 
         if cp['armed'] and cp['T'] > 0.0:
             for s in cp['terms']:
@@ -862,12 +906,13 @@ class perfusion(object):
             self.coupling_point_map(hs_objs_list, mesh_model)
 
         kf = cp['k_f']
+        base = cp['base']
         for j, s in enumerate(cp['point_term']):
             if s is None:
                 continue
             md = hs_objs_list[j].myof.data
-            md['k_4_0'] = cp['base_k40'][j] * kf[s]
-            md['k_4_1'] = cp['base_k41'][j] * kf[s]
+            for r in cp['rates']:
+                md[r] = base[r][j] * kf[s]
 
     # -----------------------------------------------------------------
     # intramyocardial pressure

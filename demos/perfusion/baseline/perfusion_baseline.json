@@ -516,15 +516,20 @@
         },
         "perfusion": {
             "perfusion_percent": [
+                {}
+            ],
+            "attachment_coupling": [
                 {
-                    "LAD": 100,
-                    "LCX": 100,
-                    "RCA": 100
+                    "c": 0.0,
+                    "n_tau": 3,
+                    "t_start_s": 100000
                 }
             ],
             "territory_outputs": [
                 {
+                    "J3": true,
                     "J4": true,
+                    "k_3": true,
                     "k_4_0": true,
                     "k_4_1": true,
                     "k_1": true,
@@ -549,7 +554,9 @@
             "displacement",
             "active_stress",
             "hs_length",
-            "total_stress"
+            "total_stress",
+            "fiber_direction",
+            "Helical_Angle"
         ],
         "mesh_output_path": [
             "/mnt/gpfs2_4m/scratch/ris237/perfusion_baseline/sim_output/"
@@ -562,6 +569,12 @@
         ],
         "frequency_n": [
             1
+        ],
+        "save_last_n_cycles": [
+            4
+        ],
+        "save_spatial_data": [
+            false
         ]
     },
     "mesh": {

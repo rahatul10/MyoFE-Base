@@ -551,7 +551,9 @@
             "displacement",
             "active_stress",
             "hs_length",
-            "total_stress"
+            "total_stress",
+            "fiber_direction",
+            "Helical_Angle"
         ],
         "mesh_output_path": [
             "/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling_baseline/sim_output/"
@@ -564,6 +566,12 @@
         ],
         "frequency_n": [
             1
+        ],
+        "save_last_n_cycles": [
+            4
+        ],
+        "save_spatial_data": [
+            false
         ]
     },
     "mesh": {

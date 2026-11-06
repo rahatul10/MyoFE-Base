@@ -515,16 +515,18 @@
             ]
         },
         "perfusion": {
-            "detachment_coupling": [
+            "attachment_coupling": [
                 {
-                    "c": 0.5,
+                    "c": 0.0,
                     "n_tau": 3,
                     "t_start_s": 5
                 }
             ],
             "territory_outputs": [
                 {
+                    "J3": true,
                     "J4": true,
+                    "k_3": true,
                     "k_4_0": true,
                     "k_4_1": true,
                     "k_1": true,

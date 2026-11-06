@@ -487,9 +487,109 @@ REF_MEAN_IMP = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Coronary autoregulation
+# ---------------------------------------------------------------------------
+# The microvessels of each territory -- its terminal resistance R_i -- adjust
+# to hold that territory's flow at its target Q_target,i, within limits.  Once
+# per beat, with Qbar_i the beat-mean flow:
+#
+#     R*_i = R_i * Qbar_i / Q_target,i        the resistance that would have
+#                                             given the target this beat
+#     R_i  <- R_i + (R*_i - R_i) / n_ar       move 1/n_ar of the way there
+#     R_i  <- clip(R_i, R_min,i, R_max,i)
+#
+#     R_min,i = R0_i / CFR                    fully dilated: CFR is the ratio
+#                                             of hyperemic to resting flow at
+#                                             the same perfusion pressure,
+#                                             = R0/R_min (Garcia et al. 2009,
+#                                             J Appl Physiol, Eqs. 7-8)
+#     R_max,i = R0_i (P_upper - IMP_i) / (P_AO,ref - IMP_i)
+#                                             fully constricted: flow held up
+#                                             to P_upper = 120 mmHg (Goodwill
+#                                             et al. 2017, Compr Physiol)
+#
+# Between the limits flow returns to target; at R_min the territory is
+# maximally dilated and flow follows pressure passively.  The lower limit of
+# the range follows from the bounds:
+#
+#     P_low,i = IMP_i + (P_AO,ref - IMP_i) / CFR
+#
+# which with CFR = 3.3 is 38-40 mmHg for every LV territory (about 40 mmHg in
+# conscious dogs: Canty 1988; Duncker et al. 2015, Fig. 1).  n_ar = 5 beats
+# gives a half-response of 4.5-5.0 s after a 20-30 mmHg drop in aortic
+# pressure at 68 bpm, measured by replaying a recorded beat through
+# perfusion.py (measured in goats: 4.9 s, Dankelman et al. 1989, J Physiol
+# 419:703).  In continuous form the law is d(ln R)/dt = (Q/Q_target - 1)/tau,
+# tau = n_ar beats: integral control, so flow returns exactly to target.  The
+# same multiplicative update is how TERMINAL_RESISTANCE_PHYSIO was calibrated.
+
+AUTOREG_P_UPPER = 120.0      # mmHg
+
+
+def autoregulation_bounds(R0, cfr, p_upper=AUTOREG_P_UPPER, P_AO=None,
+                          P_IMP=None):
+    """R_min and R_max for every terminal (dicts keyed like R0)."""
+    if P_AO is None:
+        P_AO = REF_MEAN_P_AO
+    if P_IMP is None:
+        P_IMP = REF_MEAN_IMP
+    cfr = float(cfr)
+    if cfr <= 1.0:
+        raise ValueError("autoregulation: cfr = %g; the flow reserve must be "
+                         "above 1 (e.g. 3.3)" % cfr)
+    if float(p_upper) <= P_AO:
+        raise ValueError("autoregulation: p_upper = %g mmHg must be above the "
+                         "reference aortic pressure %.1f" % (p_upper, P_AO))
+    r_min, r_max = {}, {}
+    for s, r in R0.items():
+        if s not in P_IMP:
+            raise ValueError("autoregulation: no reference IMP for %s; it is "
+                             "only set up for the full tree" % s)
+        r_min[s] = r / cfr
+        r_max[s] = r * (float(p_upper) - P_IMP[s]) / (P_AO - P_IMP[s])
+    return r_min, r_max
+
+
+def autoregulation_update(R, qbar, q_target, r_min, r_max, n_ar=1.0):
+    """One step of the law above for every terminal; returns the new R.
+    A beat-mean flow at or below zero (no forward flow) asks for full
+    dilation, which the clip turns into R_min."""
+    out = {}
+    for s in R:
+        r_star = R[s] * qbar[s] / q_target[s]
+        r = R[s] + (r_star - R[s]) / float(n_ar)
+        out[s] = min(max(r, r_min[s]), r_max[s])
+    return out
+
+
+def autoregulated_state(tree, q_target, r_min, r_max, P_AO, P_IMP,
+                        R_start=None, tol=1e-10, max_iter=20000):
+    """Where autoregulation settles at constant pressures: the fixed point of
+    the update.  Sets tree's terminal resistances to it and returns them.
+
+    The full step (n_ar = 1) is used -- the fixed point does not depend on
+    n_ar.  It converges because each terminal sees the rest of the tree as a
+    resistance R_up in series: R <- R Q/Q_target contracts with factor
+    R_up/(R + R_up) < 1."""
+    R = dict(R_start) if R_start else dict(tree.Rt)
+    for it in range(max_iter):
+        tree.set_terminal_resistance(R)
+        P = tree.steady_state(P_AO, P_IMP)
+        q = tree.perfusion(P, P_AO, P_IMP)
+        new = autoregulation_update(R, q, q_target, r_min, r_max)
+        change = max(abs(new[s] / R[s] - 1.0) for s in R)
+        R = new
+        if change < tol:
+            tree.set_terminal_resistance(R)
+            return R
+    raise RuntimeError("autoregulation steady state did not converge "
+                       "(last relative change %.2e)" % change)
+
+
 def narrowing_for_flow(subtree, percent_flow, terminal_resistance=None,
                        inertance=False, fixed_stenosis=None,
-                       P_AO=None, P_IMP=None):
+                       P_AO=None, P_IMP=None, autoregulation=None):
     """Turn {segment: percent of healthy flow} into {segment: percent AREA
     reduction}, the input apply_stenosis takes.
 
@@ -499,12 +599,20 @@ def narrowing_for_flow(subtree, percent_flow, terminal_resistance=None,
     simulation runs, flow still answers to the heart -- that is the feedback
     under study.  Several targets interact through shared vessels (LAD and
     LCX both hang off LMCA), so they are solved together.
+
+    autoregulation=dict(q_target=, r_min=, r_max=) (mL/s and terminal
+    resistances, keyed by terminal): the flows are those AFTER the
+    microvessels have adapted, so "LAD": 20 means 20% even once the LAD bed
+    has dilated as far as it can.  At rest any lasting loss of flow means the
+    bed is already maximally dilated, so the narrowing comes out tighter than
+    without autoregulation.
     """
     fixed = dict(fixed_stenosis or {})
     if P_AO is None:
         P_AO = REF_MEAN_P_AO
     if P_IMP is None:
         P_IMP = REF_MEAN_IMP
+    warm = {}                    # last autoregulated R, to start the next solve
 
     def flows(area):
         sten = dict(fixed)
@@ -515,6 +623,10 @@ def narrowing_for_flow(subtree, percent_flow, terminal_resistance=None,
         if missing:
             raise ValueError("perfusion_percent: no reference IMP for %s; it "
                              "is only set up for the full tree" % missing)
+        if autoregulation is not None:
+            warm['R'] = autoregulated_state(
+                tree, autoregulation['q_target'], autoregulation['r_min'],
+                autoregulation['r_max'], P_AO, P_IMP, R_start=warm.get('R'))
         P = tree.steady_state(P_AO, P_IMP)
         return tree.flows(P, P_AO, P_IMP)
 
@@ -769,6 +881,22 @@ class CoronaryRC(object):
         for s in self.names:
             self.C[self.segments[s]["node_d"]] += self.segments[s]["C"]
 
+        self._assemble()
+
+    def set_terminal_resistance(self, Rt):
+        """Change terminal resistances mid-run (autoregulation, once per beat)
+        and refactorize.  Rt is a dict keyed by terminal; terminals left out
+        keep their value.  The state vector lives with the caller, so it
+        carries over unchanged."""
+        for s, v in Rt.items():
+            if s not in self.Rt:
+                raise ValueError("no terminal '%s'; terminals are %s"
+                                 % (s, self.terminals))
+            v = float(v)
+            if not v > 0.0:
+                raise ValueError("terminal_resistance for %s must be "
+                                 "positive, got %r" % (s, v))
+            self.Rt[s] = v
         self._assemble()
 
     def _pinned(self, node, P_AO, P_IMP):

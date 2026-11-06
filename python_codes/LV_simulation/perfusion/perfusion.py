@@ -83,7 +83,10 @@ import numpy as np
 from dolfin import assemble
 
 from .coronary_rc import (CoronaryRC, SUBTREES, EXTRA_LV_TERMINALS,
-                          TERMINAL_RESISTANCE_PHYSIO, narrowing_for_flow)
+                          TERMINAL_RESISTANCE_PHYSIO, narrowing_for_flow,
+                          REF_MEAN_P_AO, REF_MEAN_IMP, AUTOREG_P_UPPER,
+                          autoregulation_bounds, autoregulation_update,
+                          autoregulated_state)
 
 # The AHA segmentation, its geometry, and the segment -> territory map all come
 # from dependencies/aha_segmentation.py.  Nothing regional is defined in this
@@ -141,7 +144,9 @@ except (ImportError, ValueError):
 #   1. "perfusion_percent": [{"LAD": 20}] -- THE SIMPLE WAY.  LAD carries 20%
 #      of its normal flow (100 = healthy).  The code finds the narrowing that
 #      gives this in the healthy heart and applies it; p_i is then MEASURED
-#      from the coronary tree, so flow still answers to the heart.
+#      from the coronary tree, so flow still answers to the heart.  With
+#      autoregulation on, 20 means 20% AFTER the LAD bed has dilated as far
+#      as it can (see AUTOREGULATION below).
 #   2. "stenosis": [{"LAD": 80}] -- the same narrowing given directly as
 #      percent AREA lost (80 area -> about 89% flow).
 #   3. "p_prescribed": {"LAD1": 0.0, "LAD3": 0.5} inside either coupling
@@ -160,7 +165,58 @@ DEFAULT_Q_REF = {
     "LCX3": 17.91, "PDA": 17.07,
 }
 
-COUPLING_KEYS = ('c', 'n_tau', 't_start_s', 'q_ref', 'p_prescribed')
+COUPLING_KEYS = ('c', 'n_tau', 't_start_s', 'q_ref', 'p_prescribed',
+                 'p_reference')
+
+# What p_i is measured against, "p_reference" inside either coupling:
+#   "open_artery" (default)  flow now / flow the same territory would get
+#       NOW, at this beat's mean aortic pressure and IMPs, with every vessel
+#       open.  Only a narrowing lowers p: a territory behind an open artery
+#       always has p = 1, however low the pressure goes.  This stands in for
+#       autoregulation -- healthy myocardium keeps its flow -- and stops the
+#       runaway where a weak heart lowers aortic pressure, which lowers flow
+#       everywhere, which weakens the whole heart.  Exact, because the tree is
+#       linear: beat-mean flows are its steady solution at beat-mean pressures.
+#   "healthy"  flow now / Q_ref, the healthy baseline flow (the original
+#       definition).  Any drop in pressure counts as lost perfusion.
+# With autoregulation on, "healthy" is the default and "open_artery" is
+# refused: autoregulation itself now keeps healthy territories at Q_ref, and
+# the open tree has none, so the two references would disagree.
+P_REFERENCES = ('open_artery', 'healthy')
+
+# ---------------------------------------------------------------------------
+# AUTOREGULATION (the law, its bounds and their sources: coronary_rc.py)
+# ---------------------------------------------------------------------------
+# ON BY DEFAULT -- it is part of the heart, like the baroreflex, so nothing
+# needs to be written.  Each beat every territory checks its own flow: normal
+# flow, nothing changes (R/R0 stays 1); low flow, its bed dilates; high flow,
+# it constricts.  The only thing a case sets is "perfusion_percent".
+# To change a value, inside "perfusion":
+#     "autoregulation": [{"cfr": 3.3, "n_ar": 5}]
+# To switch it OFF (fixed resistances, as in runs before Nov 2026 -- e.g. to
+# show what autoregulation contributes, or to reproduce an old run):
+#     "autoregulation": [false]
+#
+#   cfr        coronary flow reserve, R0/R_min: the bed can dilate to R0/cfr.
+#              3.3 = normal (Garcia et al. 2009, Table 1; Rigo 2005).
+#   n_ar       beats: each beat the resistance closes 1/n_ar of the gap to the
+#              value that would have given Q_ref.  5 (default) gives a
+#              half-response of 4.5-5.0 s after a 20-30 mmHg pressure drop
+#              (Dankelman et al. 1989: 4.9 s); 6 gives 5.3-5.9 s.
+#   p_upper    mmHg up to which flow is held (default 120, Goodwill et al.
+#              2017); sets R_max.
+#   t_start_s  first beat that adapts (default 0).
+#
+# Every terminal adapts, PLA included.  Targets: the LV territories' Q_ref
+# (the coupling's, so a territory held on target has p = 1 exactly); PLA its
+# healthy flow at the reference pressures.  The run STARTS adapted -- the
+# resistances are set to where autoregulation settles for the given
+# narrowing at the reference pressures -- so there is no start-up transient;
+# from then on they follow the heart beat by beat.
+#
+# Written every step: R_over_R0_<terr> = R_i / R0_i
+#     1 = resting tone,  1/cfr (0.303) = fully dilated,  above 1 = constricted.
+AUTOREG_KEYS = ('cfr', 'n_ar', 'p_upper', 't_start_s')
 
 # The two couplings: which MyoSim rates k_f multiplies, and the default floor c.
 #   "attachment_coupling"  k_3            -> J_3 = r_3 M_DRX (n_on - n_bound)
@@ -341,12 +397,24 @@ class perfusion(object):
         # known before create_data_structure runs.  The real one is built on
         # the first timestep.
         self.time_step = None
+
+        # Which coupling, read now: autoregulation targets its Q_ref.
+        given = [k for k in COUPLING_TYPES if k in self.model]
+        if len(given) > 1:
+            raise ValueError("perfusion: give attachment_coupling OR "
+                             "detachment_coupling, not both")
+        kind = given[0] if given else 'attachment_coupling'
+        self.setup_autoregulation(self.model.get('autoregulation', None),
+                                  self.model.get(kind, None))
+        law = self.autoreg['law'] if self.autoreg is not None else None
+
         self.narrowing_from_percent = {}
         if self.perfusion_percent:
             self.narrowing_from_percent = narrowing_for_flow(
                 subtree, self.perfusion_percent,
                 terminal_resistance=self.terminal_resistance,
-                inertance=self.inertance, fixed_stenosis=self.stenosis)
+                inertance=self.inertance, fixed_stenosis=self.stenosis,
+                autoregulation=law)
             merged = dict(self.stenosis)
             merged.update(dict((s, a) for s, a in
                                self.narrowing_from_percent.items() if a > 0.0))
@@ -358,12 +426,29 @@ class perfusion(object):
                                check_units=not self.narrowing_from_percent)
 
         if _is_root(self.parent) and self.perfusion_percent:
-            print("perfusion: perfusion_percent (share of healthy flow)")
+            print("perfusion: perfusion_percent (share of healthy flow%s)"
+                  % (", after full autoregulatory dilation" if law else ""))
             for name in sorted(self.perfusion_percent):
                 print("    %-6s %5.1f%% of normal flow  ->  vessel narrowed "
                       "%.2f%% of its area"
                       % (name, float(self.perfusion_percent[name]),
                          self.narrowing_from_percent[name]))
+
+        if self.autoreg is not None:
+            # Start where autoregulation settles for this narrowing at the
+            # reference pressures, so the run has no start-up transient.
+            a = self.autoreg
+            a['R'] = autoregulated_state(
+                self.tree, law['q_target'], law['r_min'], law['r_max'],
+                REF_MEAN_P_AO, REF_MEAN_IMP)
+            for s in self.tree.terminals:
+                self.data['R_over_R0_' + s] = a['R'][s] / a['R0'][s]
+            if _is_root(self.parent):
+                print("perfusion: autoregulation starts adapted, R/R0 "
+                      "(* = fully dilated)  " + "  ".join(
+                          "%s %.3f%s" % (s, a['R'][s] / a['R0'][s],
+                                         self._dilated_mark(s))
+                          for s in self.tree.terminals))
 
         if not _is_root(self.parent):
             pass
@@ -419,11 +504,6 @@ class perfusion(object):
         self.point_term = None
         self.point_w = None
 
-        given = [k for k in COUPLING_TYPES if k in self.model]
-        if len(given) > 1:
-            raise ValueError("perfusion: give attachment_coupling OR "
-                             "detachment_coupling, not both")
-        kind = given[0] if given else 'attachment_coupling'
         try:
             self.setup_coupling(self.model.get(kind, None), kind)
         except ValueError as e:      # messages are worded for detachment
@@ -444,8 +524,134 @@ class perfusion(object):
                                inertance=self.inertance,
                                stenosis=self.stenosis,
                                check_units=not self.narrowing_from_percent)
+        if self.autoreg is not None:
+            self.tree.set_terminal_resistance(self.autoreg['R'])
         self.P = self.tree.steady_state(self.initial_pressure_arteries,
                                         self.return_prescribed_imp(0.0))
+
+    def setup_autoregulation(self, spec, coupling_spec=None):
+        """Parse "autoregulation".  Left out = ON with the defaults; false =
+        off.  Sets self.autoreg.
+
+        coupling_spec is the coupling's own block, read only for a q_ref
+        override, so autoregulation and the coupling share one reference."""
+        self.autoreg = None
+        if spec is None and self.subtree != 'full':
+            spec = False             # only set up for the full tree
+        if spec is False:
+            if _is_root(self.parent):
+                print("perfusion: autoregulation OFF (terminal resistances "
+                      "fixed)")
+            return
+        if spec is None or spec is True:
+            spec = {}
+        if not isinstance(spec, dict):
+            raise ValueError('autoregulation must look like '
+                             '"autoregulation": [{"cfr": 3.3, "n_ar": 5}]')
+        bad = [k for k in spec if k not in AUTOREG_KEYS]
+        if bad:
+            raise ValueError("autoregulation: unknown key(s) %s; allowed keys "
+                             "are %s" % (sorted(bad), list(AUTOREG_KEYS)))
+        if self.subtree != 'full':
+            raise ValueError("autoregulation is set up for the full tree only "
+                             "(its targets and reference pressures are)")
+
+        cfr = float(_scalar(spec.get('cfr', 3.3)))
+        n_ar = float(_scalar(spec.get('n_ar', 5)))
+        p_upper = float(_scalar(spec.get('p_upper', AUTOREG_P_UPPER)))
+        t_start = float(_scalar(spec.get('t_start_s', 0.0)))
+        if n_ar < 1.0:
+            raise ValueError("autoregulation: n_ar = %g beats, must be >= 1"
+                             % n_ar)
+        if t_start < 0.0:
+            raise ValueError("autoregulation: t_start_s must be >= 0")
+
+        tmp = CoronaryRC(self.subtree, 1.0,
+                         terminal_resistance=self.terminal_resistance,
+                         inertance=self.inertance)
+        R0 = dict(tmp.Rt)
+        r_min, r_max = autoregulation_bounds(R0, cfr, p_upper)
+
+        # Targets, mL/s (the tree's unit): the coupling's Q_ref for the LV
+        # territories, the healthy flow at the reference pressures for the
+        # rest (PLA).
+        q_ref = dict(DEFAULT_Q_REF)
+        if isinstance(coupling_spec, dict) and 'q_ref' in coupling_spec:
+            user = _scalar(coupling_spec['q_ref'])
+            if isinstance(user, dict):        # setup_coupling checks it fully
+                for k, v in user.items():
+                    q_ref[k] = float(_scalar(v))
+        P = tmp.steady_state(REF_MEAN_P_AO, REF_MEAN_IMP)
+        q_healthy = tmp.perfusion(P, REF_MEAN_P_AO, REF_MEAN_IMP)
+        q_target = {}
+        for s in tmp.terminals:
+            q_target[s] = q_ref[s] / 60.0 if s in q_ref else q_healthy[s]
+            if not q_target[s] > 0.0:
+                raise ValueError("autoregulation: target flow for %s must be "
+                                 "positive" % s)
+
+        self.autoreg = dict(
+            cfr=cfr, n_ar=n_ar, p_upper=p_upper, t_start=t_start,
+            R0=R0, R=dict(R0),
+            law=dict(q_target=q_target, r_min=r_min, r_max=r_max),
+            vol=dict((s, 0.0) for s in R0), T=0.0,
+            last_t_RR=None, armed=False, n_beats=0)
+        for s in tmp.terminals:
+            self.data['R_over_R0_' + s] = 1.0
+
+        if _is_root(self.parent):
+            print("perfusion: autoregulation ON   CFR %g (fully dilated at "
+                  "R0/%g), flow held up to %g mmHg, n_ar = %g beats, from "
+                  "t = %g s" % (cfr, cfr, p_upper, n_ar, t_start))
+            print("perfusion:   lower limit (mmHg) at which each bed is fully "
+                  "dilated  " + "  ".join(
+                      "%s %.1f" % (s, REF_MEAN_IMP[s] + (REF_MEAN_P_AO -
+                                                         REF_MEAN_IMP[s]) / cfr)
+                      for s in tmp.terminals))
+
+    def _dilated_mark(self, s):
+        a = self.autoreg
+        return '*' if a['R'][s] <= a['law']['r_min'][s] * (1.0 + 1e-9) else ''
+
+    def autoregulation_step(self, q, time_step, t):
+        """Every step, from implement_time_step.  Beats are spotted from the
+        heart-rate countdown exactly as coupling_step does.  On the step that
+        starts a beat, the beat that ended moves every terminal resistance
+        1/n_ar of the way to the value that would have given its target, and
+        the tree is refactorized: the new resistances act from the next
+        step.  Every rank runs the same tree on the same global IMP, so every
+        rank computes the same resistances."""
+        a = self.autoreg
+        t_rr = self.parent.hr.data['t_RR']
+        new_beat = a['last_t_RR'] is not None and t_rr > a['last_t_RR']
+        a['last_t_RR'] = t_rr
+
+        if new_beat and t >= a['t_start']:
+            if a['armed'] and a['T'] > 0.0:
+                qbar = dict((s, a['vol'][s] / a['T']) for s in a['vol'])
+                law = a['law']
+                a['R'] = autoregulation_update(a['R'], qbar, law['q_target'],
+                                               law['r_min'], law['r_max'],
+                                               a['n_ar'])
+                self.tree.set_terminal_resistance(a['R'])
+                a['n_beats'] += 1
+                if _is_root(self.parent):
+                    print("autoregulation: beat %d closed at t = %.3f s   "
+                          "R/R0  %s" % (a['n_beats'], t, "  ".join(
+                              "%s %.3f%s" % (s, a['R'][s] / a['R0'][s],
+                                             self._dilated_mark(s))
+                              for s in self.tree.terminals)))
+            a['armed'] = True
+            a['T'] = 0.0
+            for s in a['vol']:
+                a['vol'][s] = 0.0
+
+        if a['armed']:
+            for s in a['vol']:
+                a['vol'][s] += q[s] * time_step
+            a['T'] += time_step
+        for s in a['R']:
+            self.data['R_over_R0_' + s] = a['R'][s] / a['R0'][s]
 
     def build_territory_marker(self, mesh_model):
         """Tag every cell with the coronary terminal that supplies it, and
@@ -601,6 +807,20 @@ class perfusion(object):
                                               list(COUPLING_KEYS)))
 
         c = float(_scalar(spec.get('c', ctype['c'])))
+        autoreg_on = getattr(self, 'autoreg', None) is not None
+        p_ref = _scalar(spec.get('p_reference',
+                                 'healthy' if autoreg_on else 'open_artery'))
+        if p_ref not in P_REFERENCES:
+            raise ValueError("detachment_coupling: p_reference must be one of "
+                             "%s, got '%s'" % (list(P_REFERENCES), p_ref))
+        if autoreg_on and p_ref == 'open_artery':
+            raise ValueError(
+                "detachment_coupling: p_reference 'open_artery' cannot be used "
+                "with autoregulation (which is on unless switched off) -- "
+                "autoregulation already keeps healthy territories at Q_ref, "
+                "and the open tree has none.  Either remove p_reference, or, "
+                "to rerun an old case without autoregulation, add "
+                "\"autoregulation\": [false] to the perfusion block.")
         n_tau = float(_scalar(spec.get('n_tau', 3)))
         t_start = float(_scalar(spec.get('t_start_s', 0.0)))
         if not 0.0 <= c <= 1.0:
@@ -659,6 +879,10 @@ class perfusion(object):
             k_f=dict((t, 1.0) for t in terms),
             p=dict((t, 1.0) for t in terms),
             vol=dict((t, 0.0) for t in terms), T=0.0,
+            p_ref=p_ref,
+            pao_int=0.0,          # time integral of P_AO over the open beat
+            imp_int=dict((t, 0.0) for t in self.tree.terminals),
+            open_tree=None,       # the tree with every vessel open
             last_t_RR=None,       # heart-rate countdown at the last step
             armed=False,          # True once a whole beat has started
             point_term=None,      # territory of every local integration point
@@ -676,6 +900,9 @@ class perfusion(object):
                      n_tau, t_start))
             print("perfusion:   Q_ref (mL/min)  " + "  ".join(
                 "%s %.2f" % (t, q_ref[t]) for t in terms))
+            print("perfusion:   p measured against %s"
+                  % ("the open-artery flow at the current pressures"
+                     if p_ref == 'open_artery' else "healthy Q_ref"))
             if p_set:
                 print("perfusion:   p PRESCRIBED (not measured)  " + "  ".join(
                     "%s %g" % (t, p_set[t]) for t in terms if t in p_set))
@@ -836,7 +1063,8 @@ class perfusion(object):
                 if f in to['fields']:
                     self.data[f + '_' + s] = acc[r + 1, i] / W
 
-    def coupling_step(self, q, time_step, t, mesh_model):
+    def coupling_step(self, q, time_step, t, mesh_model, P_AO=None,
+                      P_IMP=None):
         """Run by implement_time_step every step; LV_simulation.py is not
         changed.
 
@@ -860,7 +1088,29 @@ class perfusion(object):
         if cp['armed']:
             for s in cp['terms']:
                 cp['vol'][s] += q[s] * time_step
+            if P_AO is not None:
+                cp['pao_int'] += P_AO * time_step
+                for s in cp['imp_int']:
+                    cp['imp_int'][s] += P_IMP[s] * time_step
             cp['T'] += time_step
+
+    def open_artery_flow(self):
+        """Mean flow (mL/min) each terminal would get over the beat that just
+        ended if no vessel were narrowed: the open tree's steady solution at
+        the beat-mean aortic pressure and IMPs.  The tree is linear, so this is
+        exactly the beat-mean flow an open tree would have carried."""
+        cp = self.coupling
+        T = cp['T']
+        pao = cp['pao_int'] / T
+        imp = dict((s, cp['imp_int'][s] / T) for s in cp['imp_int'])
+        if cp['open_tree'] is None:
+            cp['open_tree'] = CoronaryRC(self.subtree, 1.0,
+                                         terminal_resistance=self.terminal_resistance,
+                                         inertance=self.inertance)
+        tree = cp['open_tree']
+        P = tree.steady_state(pao, imp)
+        q = tree.perfusion(P, pao, imp)
+        return dict((s, 60.0 * q[s]) for s in q)
 
     def update_rates(self, hs_objs_list, mesh_model, t):
         """Once per beat, from coupling_step.
@@ -881,12 +1131,20 @@ class perfusion(object):
                              "does not provide it" % cp['what'])
 
         if cp['armed'] and cp['T'] > 0.0:
+            q_open = self.open_artery_flow() if cp['p_ref'] == 'open_artery' \
+                else None
             for s in cp['terms']:
                 if s in cp['p_set']:
                     p = cp['p_set'][s]                        # fixed in JSON
                 else:
                     qbar = 60.0 * cp['vol'][s] / cp['T']      # mL/min
-                    p = min(1.0, max(0.0, qbar / cp['q_ref'][s]))
+                    if q_open is None:
+                        ref = cp['q_ref'][s]
+                    else:
+                        ref = q_open[s]
+                    # no driving pressure even with an open artery: the
+                    # narrowing cannot be what limits flow, so p = 1
+                    p = 1.0 if ref <= 1e-9 else min(1.0, max(0.0, qbar / ref))
                 target = cp['c'] + (1.0 - cp['c']) * p
                 cp['k_f'][s] += (target - cp['k_f'][s]) / cp['n_tau']
                 cp['p'][s] = p
@@ -901,6 +1159,9 @@ class perfusion(object):
         cp['T'] = 0.0
         for s in cp['terms']:
             cp['vol'][s] = 0.0
+        cp['pao_int'] = 0.0
+        for s in cp['imp_int']:
+            cp['imp_int'][s] = 0.0
 
         if cp['point_term'] is None:
             self.coupling_point_map(hs_objs_list, mesh_model)
@@ -1106,7 +1367,10 @@ class perfusion(object):
             self.data['coronary_imp_' + s] = P_IMP[s]
 
         if self.coupling is not None:
-            self.coupling_step(q, time_step, t, mesh_model)
+            self.coupling_step(q, time_step, t, mesh_model,
+                               P_AO=pressure_arteries, P_IMP=P_IMP)
+        if self.autoreg is not None:
+            self.autoregulation_step(q, time_step, t)
         if self.terr_out is not None:
             self.territory_output_step(mesh_model)
 

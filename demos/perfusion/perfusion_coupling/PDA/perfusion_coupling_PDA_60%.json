@@ -561,13 +561,13 @@
             "Helical_Angle"
         ],
         "mesh_output_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling_PDA/sim_output/"
+            "/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling_PDA_p60/sim_output/"
         ],
         "dumping_spatial_in_average": [
             true
         ],
         "output_data_path": [
-            "/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling_PDA/sim_output/data.csv"
+            "/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling_PDA_p60/sim_output/data.csv"
         ],
         "frequency_n": [
             1

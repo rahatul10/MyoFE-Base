@@ -8,8 +8,8 @@
 #SBATCH --no-requeue           # a node failure ends the job instead of silently restarting it
 #SBATCH --account=col_jfwe223_uksr
 #SBATCH --partition=CAC48M192_L         # Partition/queue to run the job in. (REQUIRED)
-#SBATCH --output=/mnt/gpfs2_4m/scratch/ris237/perfusion/autoregulation_LAD_ds60/sim_output/output.%J.out # STDOUT
-#SBATCH --error=/mnt/gpfs2_4m/scratch/ris237/perfusion/autoregulation_LAD_ds60/sim_output/output.%J.err
+#SBATCH --output=/mnt/gpfs2_4m/scratch/ris237/perfusion/autoregulation_LAD/ds60/sim_output/output.%J.out # STDOUT
+#SBATCH --error=/mnt/gpfs2_4m/scratch/ris237/perfusion/autoregulation_LAD/ds60/sim_output/output.%J.err
 #SBATCH --mail-user=ris237@uky.edu   # Where email is sent to (optional)
 #SBATCH --mail-type=BEGIN,END,FAIL         # email when the job finishes or fails
 # STDOUT

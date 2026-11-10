@@ -8,8 +8,8 @@
 #SBATCH --no-requeue
 #SBATCH --account=col_jfwe223_uksr
 #SBATCH --partition=CAC48M192_L
-#SBATCH --output=/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling_LAD4_p20/sim_output/output.%J.out
-#SBATCH --error=/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling_LAD4_p20/sim_output/output.%J.err
+#SBATCH --output=/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling/lad4/p20/sim_output/output.%J.out
+#SBATCH --error=/mnt/gpfs2_4m/scratch/ris237/perfusion_coupling/lad4/p20/sim_output/output.%J.err
 #SBATCH --mail-user=ris237@uky.edu
 #SBATCH --mail-type=BEGIN,END,FAIL
 module load ccs/singularity

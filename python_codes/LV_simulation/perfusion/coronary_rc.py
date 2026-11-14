@@ -62,6 +62,44 @@ either, because the terminal resistances (72-170) dwarf the epicardial ones
 against about 29 mmHg across the terminal resistance, so inertance acts on a
 part of the circuit that carries almost none of the pressure.
 
+TERRITORY OUTFLOW (JSON: "outflow")
+-----------------------------------
+How blood leaves each terminal node T_i into its territory, with P_T the
+node pressure and IMP_i the territory's intramyocardial pressure:
+
+  "linear"            Q_i = (P_T - IMP_i) / R_i                  (default)
+      IMP acts as a reservoir pressure beyond R_i.  Q_i goes negative
+      whenever IMP_i > P_T, and stays negative on average once a fully
+      dilated bed sits at P_T ~ mean IMP (seen at LAD 10% and 1%: blood
+      pushed out of LAD3/LAD4 and into LAD1).
+
+  "diode"             Q_i = max(P_T - IMP_i, 0) / R_i
+      The vascular waterfall (Downey & Kirk, Circ Res 1975): when IMP
+      exceeds the pressure inside them the small vessels collapse and flow
+      STOPS; it cannot reverse, because nothing on the venous side can push
+      blood back.  This is the ideal diode / ramp function of Garcia et al.,
+      J Appl Physiol 2009, Eq. 3.  With nothing else squeezed by IMP, the
+      brief early-systolic backflow disappears too.
+
+  "diode_compliance"  Q_i = max(P_T - IMP_i, 0) / R_i
+                            + C_im,i d(P_T - IMP_i)/dt
+      The diode plus an intramyocardial compliance squeezed by IMP -- the
+      full form of Garcia Eq. 3 (the "intramyocardial pump", Spaan et al.,
+      Circ Res 1981).  When IMP rises in early systole it pushes blood out
+      of C_im back into the artery: brief backflow, physiological.  Over a
+      periodic beat the C_im term integrates to zero, so the beat-mean flow
+      is the diode's, never negative.  C_im,i: Garcia's whole-LAD value,
+      4e-4 mL/mmHg, shared in proportion to resting flow (equivalently mass,
+      at 1 mL/min/g), so every territory has the same compliance per gram;
+      see intramyocardial_compliance().
+
+The diode makes each step piecewise linear.  It is solved by an active set:
+each terminal is "open" (P_T > IMP, conductance 1/R_i) or "closed" (no
+resistive outflow); solve, flip any terminal whose state contradicts its
+pressures, re-solve.  The matrix for each open/closed pattern is factorized
+once and cached, so a step is still one or two back-substitutions.  "linear"
+skips all of this and is bit-for-bit the earlier solver.
+
 UNITS
 -----
 mmHg, mL/s, s.  R and Rt in mmHg s mL^-1, C in mL mmHg^-1, L in mmHg s^2
@@ -96,6 +134,33 @@ except ImportError:
 
 
 INLET_NODE = "AO"
+
+OUTFLOWS = ("linear", "diode", "diode_compliance")
+
+# Garcia et al. 2009, Appendix B: total intramyocardial compliance of the
+# LAD bed, fitted to LAD flow waveforms (mL/mmHg).
+GARCIA_C_LAD = 4.0e-4
+LAD_TERMINALS = ("LAD1", "LAD3", "LAD4")
+
+
+def intramyocardial_compliance(q_rest, c_lad=GARCIA_C_LAD,
+                               lad_terminals=LAD_TERMINALS):
+    """C_im per terminal: c_lad shared over the LAD territories in
+    proportion to resting flow, and the same compliance per unit resting
+    flow given to every other terminal.  q_rest: {terminal: resting flow},
+    any unit.  Returns {terminal: mL/mmHg}."""
+    lad = sum(float(q_rest[s]) for s in lad_terminals if s in q_rest)
+    if not lad > 0.0:
+        raise ValueError("intramyocardial_compliance: no resting flow for the "
+                         "LAD territories %s" % (lad_terminals,))
+    per_flow = float(c_lad) / lad
+    return dict((s, per_flow * float(q)) for s, q in q_rest.items())
+
+
+def steady_outflow(outflow):
+    """The outflow to use for a STEADY solve: a compliance carries no mean
+    flow, so "diode_compliance" is just "diode" at steady state."""
+    return "diode" if outflow == "diode_compliance" else outflow
 
 
 # ---------------------------------------------------------------------------
@@ -589,7 +654,8 @@ def autoregulated_state(tree, q_target, r_min, r_max, P_AO, P_IMP,
 
 def narrowing_for_flow(subtree, percent_flow, terminal_resistance=None,
                        inertance=False, fixed_stenosis=None,
-                       P_AO=None, P_IMP=None, autoregulation=None):
+                       P_AO=None, P_IMP=None, autoregulation=None,
+                       outflow="linear"):
     """Turn {segment: percent of healthy flow} into {segment: percent AREA
     reduction}, the input apply_stenosis takes.
 
@@ -606,8 +672,12 @@ def narrowing_for_flow(subtree, percent_flow, terminal_resistance=None,
     has dilated as far as it can.  At rest any lasting loss of flow means the
     bed is already maximally dilated, so the narrowing comes out tighter than
     without autoregulation.
+
+    outflow: the run's territory outflow (see TERRITORY OUTFLOW); solved
+    here at steady state, where "diode_compliance" acts as "diode".
     """
     fixed = dict(fixed_stenosis or {})
+    ss_outflow = steady_outflow(outflow)
     if P_AO is None:
         P_AO = REF_MEAN_P_AO
     if P_IMP is None:
@@ -618,7 +688,8 @@ def narrowing_for_flow(subtree, percent_flow, terminal_resistance=None,
         sten = dict(fixed)
         sten.update(dict((s, a) for s, a in area.items() if a > 0.0))
         tree = CoronaryRC(subtree, 1.0, terminal_resistance=terminal_resistance,
-                          inertance=inertance, stenosis=sten, check_units=False)
+                          inertance=inertance, stenosis=sten, check_units=False,
+                          outflow=ss_outflow)
         missing = [t for t in tree.terminals if t not in P_IMP]
         if missing:
             raise ValueError("perfusion_percent: no reference IMP for %s; it "
@@ -809,12 +880,20 @@ class CoronaryRC(object):
     """
 
     def __init__(self, subtree, dt, terminal_resistance=None,
-                 inertance=False, stenosis=None, check_units=True):
+                 inertance=False, stenosis=None, check_units=True,
+                 outflow="linear", c_im=None):
         """subtree is a key of SUBTREES.  terminal_resistance may be None (no
         downstream resistance), a single number applied to every territory, or
         a dict keyed by terminal segment name; omitted, the calibrated table
-        for this configuration is used."""
+        for this configuration is used.
 
+        outflow is one of OUTFLOWS (see TERRITORY OUTFLOW).  c_im, required
+        for "diode_compliance", is {terminal: mL/mmHg}."""
+
+        if outflow not in OUTFLOWS:
+            raise ValueError("outflow must be one of %s, got '%s'"
+                             % (list(OUTFLOWS), outflow))
+        self.outflow = outflow
         self.subtree = subtree
         self.inertance = bool(inertance)
         self.segments = _resolve_segments(subtree)
@@ -881,6 +960,28 @@ class CoronaryRC(object):
         for s in self.names:
             self.C[self.segments[s]["node_d"]] += self.segments[s]["C"]
 
+        # Territory outflow.  open[s]: resistive outflow active (always True
+        # for "linear").  c_im[s]: compliance squeezed by IMP (zero unless
+        # "diode_compliance").
+        self.open = dict((s, True) for s in self.terminals)
+        self.c_im = dict((s, 0.0) for s in self.terminals)
+        if outflow == "diode_compliance":
+            if c_im is None:
+                raise ValueError("outflow 'diode_compliance' needs c_im, the "
+                                 "intramyocardial compliance per terminal")
+            missing = [s for s in self.terminals if s not in c_im]
+            if missing:
+                raise ValueError("c_im is missing entries for %s" % missing)
+            for s in self.terminals:
+                v = float(c_im[s])
+                if v < 0.0:
+                    raise ValueError("c_im for %s must be >= 0, got %r"
+                                     % (s, v))
+                self.c_im[s] = v
+        self._imp_prev = None        # IMP at the previous step (C_im term)
+        self._last_qc = dict((s, 0.0) for s in self.terminals)
+        self._lu_cache = {}
+
         self._assemble()
 
     def set_terminal_resistance(self, Rt):
@@ -897,16 +998,35 @@ class CoronaryRC(object):
                 raise ValueError("terminal_resistance for %s must be "
                                  "positive, got %r" % (s, v))
             self.Rt[s] = v
+        self._lu_cache = {}
         self._assemble()
+
+    def forget_imp_history(self):
+        """Make the next step() treat its IMP as unchanged from the step
+        before, so a C_im sees no artificial jump when stepping starts from
+        a state solved at a different IMP (e.g. the prescribed IMP at t=0)."""
+        self._imp_prev = None
+        self._last_qc = dict((s, 0.0) for s in self.terminals)
 
     def _pinned(self, node, P_AO, P_IMP):
         if node == INLET_NODE:
             return P_AO
         return P_IMP[self.terminal_segment[node]]
 
+    def _open_key(self):
+        return tuple(self.open[s] for s in self.terminals)
+
     def _assemble(self):
-        if self.inertance:
-            return self._assemble_rlc()
+        """Matrix and LU for the current open/closed pattern, from the cache
+        when this pattern has been seen since the last resistance change."""
+        key = self._open_key()
+        if key not in self._lu_cache:
+            A = self._build_rlc() if self.inertance else self._build()
+            lu = lu_factor(A) if (_HAVE_SCIPY and self.n > 0) else None
+            self._lu_cache[key] = (A, lu)
+        self.A, self._lu = self._lu_cache[key]
+
+    def _build(self):
         A = np.zeros((self.n, self.n))
         for node in self.free_nodes:
             i = self.idx[node]
@@ -921,12 +1041,12 @@ class CoronaryRC(object):
                         A[self.idx[u], self.idx[v]] -= g
         for nd in self.terminal_nodes:
             s = self.terminal_segment[nd]
-            A[self.idx[nd], self.idx[nd]] += 1.0 / self.Rt[s]
-        self.A = A
-        if _HAVE_SCIPY and self.n > 0:
-            self._lu = lu_factor(A)
+            if self.open[s]:
+                A[self.idx[nd], self.idx[nd]] += 1.0 / self.Rt[s]
+        self._add_c_im(A)
+        return A
 
-    def _assemble_rlc(self):
+    def _build_rlc(self):
         """Pressures and flows together.  Rows 0..n_p-1 are node mass balance,
         rows n_p.. are the segment momentum equations."""
         A = np.zeros((self.n, self.n))
@@ -935,7 +1055,8 @@ class CoronaryRC(object):
             A[i, i] += self.C[node] / self.dt
         for nd in self.terminal_nodes:
             s = self.terminal_segment[nd]
-            A[self.idx[nd], self.idx[nd]] += 1.0 / self.Rt[s]
+            if self.open[s]:
+                A[self.idx[nd], self.idx[nd]] += 1.0 / self.Rt[s]
         for s in self.names:
             j = self.qidx[s]
             a, d = self.segments[s]["node_p"], self.segments[s]["node_d"]
@@ -946,15 +1067,24 @@ class CoronaryRC(object):
                 A[self.idx[d], j] -= 1.0        # enters the distal node
                 A[j, self.idx[d]] += 1.0
             A[j, j] += self.segments[s]["L"] / self.dt + self.segments[s]["R"]
-        self.A = A
-        if _HAVE_SCIPY and self.n > 0:
-            self._lu = lu_factor(A)
+        self._add_c_im(A)
+        return A
+
+    def _add_c_im(self, A):
+        # C_im d(P_T - IMP)/dt leaves the terminal node: C_im/dt on its
+        # diagonal; the old P_T and the change in IMP go to the load.
+        if self.outflow != "diode_compliance":
+            return
+        for nd in self.terminal_nodes:
+            i = self.idx[nd]
+            A[i, i] += self.c_im[self.terminal_segment[nd]] / self.dt
 
     def _bc_load_rlc(self, P_AO, P_IMP):
         b = np.zeros(self.n)
         for nd in self.terminal_nodes:
             s = self.terminal_segment[nd]
-            b[self.idx[nd]] += P_IMP[s] / self.Rt[s]
+            if self.open[s]:
+                b[self.idx[nd]] += P_IMP[s] / self.Rt[s]
         for s in self.names:
             j = self.qidx[s]
             if self.segments[s]["node_p"] == INLET_NODE:
@@ -975,12 +1105,26 @@ class CoronaryRC(object):
                     b[self.idx[u]] += g * self._pinned(v, P_AO, P_IMP)
         for nd in self.terminal_nodes:
             s = self.terminal_segment[nd]
-            b[self.idx[nd]] += P_IMP[s] / self.Rt[s]
+            if self.open[s]:
+                b[self.idx[nd]] += P_IMP[s] / self.Rt[s]
         return b
 
-    def step(self, P_prev, P_AO, P_IMP):
-        if self.n == 0:
-            return np.zeros(0)
+    def _update_open(self, P, P_IMP):
+        """Active-set check for the diode.  Flips every terminal whose state
+        contradicts the solution just found; returns True if any flipped."""
+        changed = False
+        for nd in self.terminal_nodes:
+            s = self.terminal_segment[nd]
+            dp = P[self.idx[nd]] - P_IMP[s]
+            if self.open[s] and dp < 0.0:
+                self.open[s] = False
+                changed = True
+            elif not self.open[s] and dp > 0.0:
+                self.open[s] = True
+                changed = True
+        return changed
+
+    def _solve_step(self, P_prev, P_AO, P_IMP):
         b = self._bc_load(P_AO, P_IMP)
         for node in self.free_nodes:
             i = self.idx[node]
@@ -989,13 +1133,43 @@ class CoronaryRC(object):
             for s in self.names:
                 j = self.qidx[s]
                 b[j] += self.segments[s]["L"] / self.dt * P_prev[j]
+        if self.outflow == "diode_compliance":
+            imp_prev = self._imp_prev if self._imp_prev is not None else P_IMP
+            for nd in self.terminal_nodes:
+                s = self.terminal_segment[nd]
+                i = self.idx[nd]
+                b[i] += self.c_im[s] / self.dt * (P_prev[i] - imp_prev[s]
+                                                  + P_IMP[s])
         if _HAVE_SCIPY:
             return lu_solve(self._lu, b)
         return np.linalg.solve(self.A, b)
 
-    def steady_state(self, P_AO, P_IMP):
+    def step(self, P_prev, P_AO, P_IMP):
         if self.n == 0:
             return np.zeros(0)
+        if self.outflow == "linear":
+            return self._solve_step(P_prev, P_AO, P_IMP)
+
+        # Diode: start from the last step's open/closed pattern (it rarely
+        # changes within one step) and re-solve until consistent.  The
+        # network is a monotone (M-matrix) system, so this settles in a few
+        # passes; a pattern seen once is factorized once.
+        for it in range(2 * len(self.terminals) + 2):
+            P = self._solve_step(P_prev, P_AO, P_IMP)
+            if not self._update_open(P, P_IMP):
+                break
+            self._assemble()
+        if self.outflow == "diode_compliance":
+            imp_prev = self._imp_prev if self._imp_prev is not None else P_IMP
+            for nd in self.terminal_nodes:
+                s = self.terminal_segment[nd]
+                i = self.idx[nd]
+                self._last_qc[s] = self.c_im[s] / self.dt * (
+                    (P[i] - P_IMP[s]) - (P_prev[i] - imp_prev[s]))
+            self._imp_prev = dict(P_IMP)
+        return P
+
+    def _steady_solve(self, P_AO, P_IMP):
         A = self.A.copy()
         for node in self.free_nodes:
             i = self.idx[node]
@@ -1004,7 +1178,27 @@ class CoronaryRC(object):
             for s in self.names:
                 j = self.qidx[s]
                 A[j, j] -= self.segments[s]["L"] / self.dt
+        if self.outflow == "diode_compliance":
+            for nd in self.terminal_nodes:
+                i = self.idx[nd]
+                A[i, i] -= self.c_im[self.terminal_segment[nd]] / self.dt
         return np.linalg.solve(A, self._bc_load(P_AO, P_IMP))
+
+    def steady_state(self, P_AO, P_IMP):
+        """Constant pressures: no compliance or inertance terms.  With a
+        diode, terminals whose pressure stays below IMP are closed."""
+        if self.n == 0:
+            return np.zeros(0)
+        if self.outflow == "linear":
+            return self._steady_solve(P_AO, P_IMP)
+        for it in range(2 * len(self.terminals) + 2):
+            P = self._steady_solve(P_AO, P_IMP)
+            if not self._update_open(P, P_IMP):
+                break
+            self._assemble()
+        self._last_qc = dict((s, 0.0) for s in self.terminals)
+        self._imp_prev = dict(P_IMP)
+        return P
 
     def pressure(self, P, node, P_AO, P_IMP):
         if node in self.idx:
@@ -1025,17 +1219,27 @@ class CoronaryRC(object):
 
     def perfusion(self, P, P_AO, P_IMP):
         """Flow delivered into each territory, across the terminal
-        resistance.  This is the quantity Q that feeds Eq. 19."""
+        resistance.  This is the quantity Q that feeds Eq. 19.
+
+        "diode": the resistive flow, never negative.  "diode_compliance":
+        plus the flow into C_im, from the most recent step() (zero after
+        steady_state()), so call it right after the solve that produced P."""
         out = {}
         for nd in self.terminal_nodes:
             s = self.terminal_segment[nd]
-            out[s] = (P[self.idx[nd]] - P_IMP[s]) / self.Rt[s]
+            dp = P[self.idx[nd]] - P_IMP[s]
+            if self.outflow == "linear":
+                out[s] = dp / self.Rt[s]
+            else:
+                q = max(dp, 0.0) / self.Rt[s] if self.open[s] else 0.0
+                out[s] = q + self._last_qc[s]
         return out
 
     def describe(self):
         print("  config    : %s" % self.subtree)
         print("  segments  : %d  %s" % (len(self.names), ", ".join(self.names)))
         print("  free nodes: %d  %s" % (self.n, ", ".join(self.free_nodes)))
+        print("  outflow   : %s" % self.outflow)
         print("  pinned    : %-8s = P_AO" % INLET_NODE)
         for s in self.terminals:
             print("              %-8s = P_IMP[%s]  (beyond Rt = %.4g)"

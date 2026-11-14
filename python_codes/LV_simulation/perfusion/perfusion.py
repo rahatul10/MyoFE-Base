@@ -86,7 +86,8 @@ from .coronary_rc import (CoronaryRC, SUBTREES, EXTRA_LV_TERMINALS,
                           TERMINAL_RESISTANCE_PHYSIO, narrowing_for_flow,
                           REF_MEAN_P_AO, REF_MEAN_IMP, AUTOREG_P_UPPER,
                           autoregulation_bounds, autoregulation_update,
-                          autoregulated_state)
+                          autoregulated_state, OUTFLOWS, GARCIA_C_LAD,
+                          intramyocardial_compliance, steady_outflow)
 
 # The AHA segmentation, its geometry, and the segment -> territory map all come
 # from dependencies/aha_segmentation.py.  Nothing regional is defined in this
@@ -217,6 +218,25 @@ P_REFERENCES = ('open_artery', 'healthy')
 # Written every step: R_over_R0_<terr> = R_i / R0_i
 #     1 = resting tone,  1/cfr (0.303) = fully dilated,  above 1 = constricted.
 AUTOREG_KEYS = ('cfr', 'n_ar', 'p_upper', 't_start_s')
+
+# ---------------------------------------------------------------------------
+# TERRITORY OUTFLOW (equations and sources: coronary_rc.py)
+# ---------------------------------------------------------------------------
+# Inside "perfusion":
+#     "outflow": ["linear"]            (default) Q = (P_T - IMP)/R; can go
+#                                      negative, also on average over a beat
+#     "outflow": ["diode"]             Q = max(P_T - IMP, 0)/R; flow stops
+#                                      when IMP exceeds P_T, never reverses
+#                                      (Garcia et al. 2009, Eq. 3)
+#     "outflow": ["diode_compliance"]  the diode plus a compliance squeezed by
+#                                      IMP, which brings back a brief systolic
+#                                      backflow
+# "c_im_lad": [4e-4]  whole-LAD intramyocardial compliance for
+#                     "diode_compliance", mL/mmHg (Garcia's value, shared
+#                     over the territories by resting flow).  Fitted by Garcia
+#                     with IMP = LV pressure/2; with the much steeper "stress"
+#                     IMP it gives about -50 mL/min of backflow in a HEALTHY
+#                     LAD1, so calibrate it before relying on it.
 
 # The two couplings: which MyoSim rates k_f multiplies, and the default floor c.
 #   "attachment_coupling"  k_3            -> J_3 = r_3 M_DRX (n_on - n_bound)
@@ -386,6 +406,14 @@ class perfusion(object):
         # difference is expected to be small.
         self.inertance = bool(self.model.get('inertance', True))
 
+        # How blood leaves each terminal into its territory (see TERRITORY
+        # OUTFLOW above).  "linear" is the original law.
+        self.outflow = _scalar(self.model.get('outflow', 'linear'))
+        if self.outflow not in OUTFLOWS:
+            raise ValueError("perfusion: outflow must be one of %s, got '%s'"
+                             % (list(OUTFLOWS), self.outflow))
+        self.c_im = None
+
         # Geometry comes only from aha_segmentation.py -- no JSON override, so
         # perfusion can never segment the mesh differently from what was
         # validated.
@@ -407,6 +435,7 @@ class perfusion(object):
         self.setup_autoregulation(self.model.get('autoregulation', None),
                                   self.model.get(kind, None))
         law = self.autoreg['law'] if self.autoreg is not None else None
+        self.setup_outflow(self.model.get(kind, None))
 
         self.narrowing_from_percent = {}
         if self.perfusion_percent:
@@ -414,7 +443,7 @@ class perfusion(object):
                 subtree, self.perfusion_percent,
                 terminal_resistance=self.terminal_resistance,
                 inertance=self.inertance, fixed_stenosis=self.stenosis,
-                autoregulation=law)
+                autoregulation=law, outflow=self.outflow)
             merged = dict(self.stenosis)
             merged.update(dict((s, a) for s, a in
                                self.narrowing_from_percent.items() if a > 0.0))
@@ -423,7 +452,8 @@ class perfusion(object):
                                terminal_resistance=self.terminal_resistance,
                                inertance=self.inertance,
                                stenosis=self.stenosis,
-                               check_units=not self.narrowing_from_percent)
+                               check_units=not self.narrowing_from_percent,
+                               outflow=self.outflow, c_im=self.c_im)
 
         if _is_root(self.parent) and self.perfusion_percent:
             print("perfusion: perfusion_percent (share of healthy flow%s)"
@@ -523,11 +553,13 @@ class perfusion(object):
                                terminal_resistance=self.terminal_resistance,
                                inertance=self.inertance,
                                stenosis=self.stenosis,
-                               check_units=not self.narrowing_from_percent)
+                               check_units=not self.narrowing_from_percent,
+                               outflow=self.outflow, c_im=self.c_im)
         if self.autoreg is not None:
             self.tree.set_terminal_resistance(self.autoreg['R'])
         self.P = self.tree.steady_state(self.initial_pressure_arteries,
                                         self.return_prescribed_imp(0.0))
+        self.tree.forget_imp_history()
 
     def setup_autoregulation(self, spec, coupling_spec=None):
         """Parse "autoregulation".  Left out = ON with the defaults; false =
@@ -568,7 +600,8 @@ class perfusion(object):
 
         tmp = CoronaryRC(self.subtree, 1.0,
                          terminal_resistance=self.terminal_resistance,
-                         inertance=self.inertance)
+                         inertance=self.inertance,
+                         outflow=steady_outflow(self.outflow))
         R0 = dict(tmp.Rt)
         r_min, r_max = autoregulation_bounds(R0, cfr, p_upper)
 
@@ -608,6 +641,51 @@ class perfusion(object):
                       "%s %.1f" % (s, REF_MEAN_IMP[s] + (REF_MEAN_P_AO -
                                                          REF_MEAN_IMP[s]) / cfr)
                       for s in tmp.terminals))
+
+    def setup_outflow(self, coupling_spec=None):
+        """Log the territory outflow and, for "diode_compliance", set
+        self.c_im: Garcia's whole-LAD compliance (or "c_im_lad") shared over
+        every terminal in proportion to its resting flow -- the coupling's
+        Q_ref for the LV territories, the healthy flow at the reference
+        pressures for the rest (PLA) -- i.e. the same compliance per gram."""
+        if self.outflow == 'diode_compliance':
+            if self.subtree != 'full':
+                raise ValueError("outflow 'diode_compliance' is set up for the "
+                                 "full tree only (its resting flows are)")
+            c_lad = float(_scalar(self.model.get('c_im_lad', GARCIA_C_LAD)))
+            if c_lad < 0.0:
+                raise ValueError("c_im_lad must be >= 0, got %g" % c_lad)
+            tmp = CoronaryRC(self.subtree, 1.0,
+                             terminal_resistance=self.terminal_resistance,
+                             inertance=self.inertance)
+            q_ref = dict(DEFAULT_Q_REF)
+            if isinstance(coupling_spec, dict) and 'q_ref' in coupling_spec:
+                user = _scalar(coupling_spec['q_ref'])
+                if isinstance(user, dict):    # setup_coupling checks it fully
+                    for k, v in user.items():
+                        q_ref[k] = float(_scalar(v))
+            P = tmp.steady_state(REF_MEAN_P_AO, REF_MEAN_IMP)
+            q_healthy = tmp.perfusion(P, REF_MEAN_P_AO, REF_MEAN_IMP)
+            q_rest = dict((s, q_ref[s] / 60.0 if s in q_ref else q_healthy[s])
+                          for s in tmp.terminals)
+            self.c_im = intramyocardial_compliance(q_rest, c_lad)
+        elif 'c_im_lad' in self.model and _is_root(self.parent):
+            print("perfusion: NOTE c_im_lad is ignored unless outflow is "
+                  "'diode_compliance'")
+
+        if not _is_root(self.parent):
+            return
+        text = {
+            'linear': "Q = (P_T - IMP)/R, can reverse",
+            'diode': "Q = max(P_T - IMP, 0)/R: flow stops when IMP > P_T, "
+                     "never reverses (Garcia 2009 Eq. 3)",
+            'diode_compliance': "diode + compliance squeezed by IMP (Garcia "
+                                "2009 Eq. 3): brief systolic backflow only"}
+        print("perfusion: territory outflow '%s'  %s"
+              % (self.outflow, text[self.outflow]))
+        if self.c_im is not None:
+            print("perfusion:   C_im (mL/mmHg)  " + "  ".join(
+                "%s %.2e" % (s, self.c_im[s]) for s in sorted(self.c_im)))
 
     def _dilated_mark(self, s):
         a = self.autoreg
@@ -1106,7 +1184,8 @@ class perfusion(object):
         if cp['open_tree'] is None:
             cp['open_tree'] = CoronaryRC(self.subtree, 1.0,
                                          terminal_resistance=self.terminal_resistance,
-                                         inertance=self.inertance)
+                                         inertance=self.inertance,
+                                         outflow=steady_outflow(self.outflow))
         tree = cp['open_tree']
         P = tree.steady_state(pao, imp)
         q = tree.perfusion(P, pao, imp)

@@ -520,6 +520,9 @@
                     "LAD": 40
                 }
             ],
+            "outflow": [
+                "diode"
+            ],
             "attachment_coupling": [
                 {
                     "c": 0.0,
